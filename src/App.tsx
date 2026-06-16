@@ -1,14 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, ArrowLeft, Clock, Share2 } from 'lucide-react';
-import GoogleNews from './components/GoogleNews';
 import { featuredArticle, additionalArticles, Article } from './data';
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<'SP PLN KALBAR' | 'BERITA NASIONAL' | 'BERITA INTERNASIONAL'>('SP PLN KALBAR');
 
 
   useEffect(() => {
@@ -116,143 +114,99 @@ export default function App() {
           </div>
         </motion.div>
 
-        {/* Tabs */}
-        <div className="flex overflow-x-auto no-scrollbar gap-2 mb-10 pb-2">
-          {['SP PLN KALBAR', 'BERITA NASIONAL', 'BERITA INTERNASIONAL'].map((category) => (
-            <button
-              key={category}
-              onClick={() => setActiveCategory(category as any)}
-              className={`px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-300 ${
-                activeCategory === category
-                  ? 'bg-blue-700 text-white shadow-md'
-                  : 'bg-white/40 text-gray-700 hover:bg-white/70 border border-white/40'
-              }`}
+        {/* Featured Article */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="mb-16">
+            <motion.div
+              layoutId={`card-container-${featuredArticle.id}`}
+              className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2"
+              onClick={() => setSelectedId(featuredArticle.id)}
             >
-              {category}
-            </button>
-          ))}
-        </div>
+              <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner">
+                <motion.img
+                  layoutId={`image-${featuredArticle.id}`}
+                  src={featuredArticle.imageUrl}
+                  alt={featuredArticle.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                />
+                <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-3xl pointer-events-none" />
+                <div className="absolute top-4 left-4 z-10">
+                  <span className="px-4 py-2 bg-white/90 backdrop-blur-md text-xs font-bold uppercase tracking-wider rounded-full shadow-md text-gray-800">
+                    {featuredArticle.category}
+                  </span>
+                </div>
+              </div>
+              <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2">
+                <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-gray-500 mb-5 font-medium">
+                  <span className="text-blue-700">{featuredArticle.author}</span>
+                  <span className="text-gray-300">&bull;</span>
+                  <span className="flex items-center"><Clock size={16} className="mr-1.5 opacity-70" /> {featuredArticle.readTime}</span>
+                </motion.div>
+                <motion.h2
+                  layoutId={`title-${featuredArticle.id}`}
+                  className="font-serif text-3xl md:text-5xl font-bold leading-tight mb-5 text-gray-900 group-hover:text-blue-900 transition-colors duration-300 drop-shadow-sm"
+                >
+                  {featuredArticle.title}
+                </motion.h2>
+                <motion.p
+                  layoutId={`excerpt-${featuredArticle.id}`}
+                  className="text-gray-600 text-lg leading-relaxed line-clamp-3"
+                >
+                  {featuredArticle.excerpt}
+                </motion.p>
+              </div>
+            </motion.div>
+          </div>
 
-        {activeCategory === 'SP PLN KALBAR' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
-          >
-            {/* Featured Article */}
-            <div className="mb-16">
+          {/* Sub Articles Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-gray-200/60 pt-16">
+            {additionalArticles.map((article, index) => (
               <motion.div
-                layoutId={`card-container-${featuredArticle.id}`}
-                className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2"
-                onClick={() => setSelectedId(featuredArticle.id)}
+                layoutId={`card-container-${article.id}`}
+                key={article.id}
+                className="group cursor-pointer flex flex-col bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2 relative"
+                onClick={() => setSelectedId(article.id)}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
               >
-                <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner">
+                <div className="overflow-hidden rounded-3xl aspect-[4/3] mb-5 relative shadow-inner">
                   <motion.img
-                    layoutId={`image-${featuredArticle.id}`}
-                    src={featuredArticle.imageUrl}
-                    alt={featuredArticle.title}
+                    layoutId={`image-${article.id}`}
+                    src={article.imageUrl}
+                    alt={article.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                   />
                   <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-3xl pointer-events-none" />
-                  <div className="absolute top-4 left-4 z-10">
-                    <span className="px-4 py-2 bg-white/90 backdrop-blur-md text-xs font-bold uppercase tracking-wider rounded-full shadow-md text-gray-800">
-                      {featuredArticle.category}
-                    </span>
-                  </div>
                 </div>
-                <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2">
-                  <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-gray-500 mb-5 font-medium">
-                    <span className="text-blue-700">{featuredArticle.author}</span>
+                <div className="flex flex-col flex-1 px-3 pb-3">
+                  <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-gray-500 mb-4 uppercase tracking-wider font-semibold">
+                    <span className="text-blue-700">{article.category}</span>
                     <span className="text-gray-300">&bull;</span>
-                    <span className="flex items-center"><Clock size={16} className="mr-1.5 opacity-70" /> {featuredArticle.readTime}</span>
+                    <span>{article.readTime}</span>
                   </motion.div>
-                  <motion.h2
-                    layoutId={`title-${featuredArticle.id}`}
-                    className="font-serif text-3xl md:text-5xl font-bold leading-tight mb-5 text-gray-900 group-hover:text-blue-900 transition-colors duration-300 drop-shadow-sm"
+                  <motion.h3
+                    layoutId={`title-${article.id}`}
+                    className="font-serif text-xl font-bold leading-snug mb-3 text-gray-900 group-hover:text-blue-900 transition-colors duration-300"
                   >
-                    {featuredArticle.title}
-                  </motion.h2>
+                    {article.title}
+                  </motion.h3>
                   <motion.p
-                    layoutId={`excerpt-${featuredArticle.id}`}
-                    className="text-gray-600 text-lg leading-relaxed line-clamp-3"
+                    layoutId={`excerpt-${article.id}`}
+                    className="text-sm text-gray-600 leading-relaxed line-clamp-2 mt-auto"
                   >
-                    {featuredArticle.excerpt}
+                    {article.excerpt}
                   </motion.p>
                 </div>
               </motion.div>
-            </div>
-
-            {/* Sub Articles Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-gray-200/60 pt-16">
-              {additionalArticles.map((article, index) => (
-                <motion.div
-                  layoutId={`card-container-${article.id}`}
-                  key={article.id}
-                  className="group cursor-pointer flex flex-col bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2 relative"
-                  onClick={() => setSelectedId(article.id)}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <div className="overflow-hidden rounded-3xl aspect-[4/3] mb-5 relative shadow-inner">
-                    <motion.img
-                      layoutId={`image-${article.id}`}
-                      src={article.imageUrl}
-                      alt={article.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-                    />
-                    <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-3xl pointer-events-none" />
-                  </div>
-                  <div className="flex flex-col flex-1 px-3 pb-3">
-                    <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-gray-500 mb-4 uppercase tracking-wider font-semibold">
-                      <span className="text-blue-700">{article.category}</span>
-                      <span className="text-gray-300">&bull;</span>
-                      <span>{article.readTime}</span>
-                    </motion.div>
-                    <motion.h3
-                      layoutId={`title-${article.id}`}
-                      className="font-serif text-xl font-bold leading-snug mb-3 text-gray-900 group-hover:text-blue-900 transition-colors duration-300"
-                    >
-                      {article.title}
-                    </motion.h3>
-                    <motion.p
-                      layoutId={`excerpt-${article.id}`}
-                      className="text-sm text-gray-600 leading-relaxed line-clamp-2 mt-auto"
-                    >
-                      {article.excerpt}
-                    </motion.p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {activeCategory === 'BERITA NASIONAL' && (
-          <motion.div
-            key="nasional"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
-          >
-            <GoogleNews topic="NATION" />
-          </motion.div>
-        )}
-
-        {activeCategory === 'BERITA INTERNASIONAL' && (
-          <motion.div
-            key="internasional"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
-          >
-            <GoogleNews topic="WORLD" />
-          </motion.div>
-        )}
+            ))}
+          </div>
+        </motion.div>
       </main>
 
       {/* Expanded Article Overlay */}
