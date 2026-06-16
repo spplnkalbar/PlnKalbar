@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Berita SP PLN Kalbar",
+  "description": "Aplikasi pembaca berita yang elegan dengan animasi halus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
