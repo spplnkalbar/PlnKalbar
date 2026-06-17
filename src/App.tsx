@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, ArrowLeft, Clock, Share2 } from 'lucide-react';
-import { featuredArticle, additionalArticles, Article } from './data';
+import { Menu, ArrowLeft, Clock, Share2, Zap, Flag, Globe } from 'lucide-react';
+import { plnArticles, nasionalArticles, internasionalArticles, Article } from './data';
+import CurrencyTicker from './components/CurrencyTicker';
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'pln' | 'nasional' | 'internasional'>('pln');
 
 
   useEffect(() => {
@@ -17,7 +19,16 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const allArticles = [featuredArticle, ...additionalArticles];
+  const currentArticles = activeTab === 'pln' 
+    ? plnArticles 
+    : activeTab === 'nasional' 
+      ? nasionalArticles 
+      : internasionalArticles;
+
+  const featuredArticle = currentArticles[0];
+  const additionalArticles = currentArticles.slice(1);
+
+  const allArticles = [...plnArticles, ...nasionalArticles, ...internasionalArticles];
   const selectedArticle = allArticles.find((a) => a.id === selectedId);
 
   // When an article is selected, disable background scrolling
@@ -94,12 +105,13 @@ export default function App() {
 
       {/* Main Content */}
       <main className="relative z-10 pt-28 pb-20 px-6 max-w-7xl mx-auto">
+        <CurrencyTicker />
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="mb-8 flex items-center justify-between border-b border-gray-200 pb-4"
+          className="mb-6 flex items-center justify-between border-b border-gray-200 pb-4"
         >
           <h1 className="font-serif text-4xl md:text-5xl lg:text-7xl font-bold text-gray-900">
             Edisi Hari Ini
@@ -114,98 +126,152 @@ export default function App() {
           </div>
         </motion.div>
 
-        {/* Featured Article */}
+        {/* Tab Pages / Categories Selector */}
         <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="mb-12 flex items-center overflow-x-auto no-scrollbar -mx-6 px-6 sm:mx-0 sm:px-0 py-1 gap-3 scroll-smooth select-none"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          <button
+            id="tab-pln"
+            onClick={() => setActiveTab('pln')}
+            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border cursor-pointer ${
+              activeTab === 'pln'
+                ? 'bg-[#FF0000] text-white border-red-600 shadow-md shadow-red-600/20 font-black'
+                : 'bg-white/45 text-gray-600 hover:bg-white/80 hover:text-red-600 border-white/40 backdrop-blur-md'
+            }`}
+          >
+            <Zap size={16} className={activeTab === 'pln' ? 'animate-pulse text-yellow-300' : 'text-gray-400'} />
+            <span>Berita SP PLN Kalbar</span>
+          </button>
+          
+          <button
+            id="tab-nasional"
+            onClick={() => setActiveTab('nasional')}
+            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border cursor-pointer ${
+              activeTab === 'nasional'
+                ? 'bg-[#FF0000] text-white border-red-600 shadow-md shadow-red-600/20 font-black'
+                : 'bg-white/45 text-gray-600 hover:bg-white/80 hover:text-red-600 border-white/40 backdrop-blur-md'
+            }`}
+          >
+            <Flag size={16} className={activeTab === 'nasional' ? 'text-white' : 'text-gray-400'} />
+            <span>Berita Nasional</span>
+          </button>
+
+          <button
+            id="tab-internasional"
+            onClick={() => setActiveTab('internasional')}
+            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border cursor-pointer ${
+              activeTab === 'internasional'
+                ? 'bg-[#FF0000] text-white border-red-600 shadow-md shadow-red-600/20 font-black'
+                : 'bg-white/45 text-gray-600 hover:bg-white/80 hover:text-red-600 border-white/40 backdrop-blur-md'
+            }`}
+          >
+            <Globe size={16} className={activeTab === 'internasional' ? 'text-white' : 'text-gray-400'} />
+            <span>Berita Internasional</span>
+          </button>
+        </motion.div>
+
+        {/* Featured Article & Sub Articles Section with dynamic key for smooth transitions */}
+        <motion.div
+          key={activeTab}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
         >
-          <div className="mb-16">
-            <motion.div
-              layoutId={`card-container-${featuredArticle.id}`}
-              className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2"
-              onClick={() => setSelectedId(featuredArticle.id)}
-            >
-              <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner">
-                <motion.img
-                  layoutId={`image-${featuredArticle.id}`}
-                  src={featuredArticle.imageUrl}
-                  alt={featuredArticle.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-                />
-                <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-3xl pointer-events-none" />
-                <div className="absolute top-4 left-4 z-10">
-                  <span className="px-4 py-2 bg-white/90 backdrop-blur-md text-xs font-bold uppercase tracking-wider rounded-full shadow-md text-gray-800">
-                    {featuredArticle.category}
-                  </span>
-                </div>
-              </div>
-              <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2">
-                <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-gray-500 mb-5 font-medium">
-                  <span className="text-blue-700">{featuredArticle.author}</span>
-                  <span className="text-gray-300">&bull;</span>
-                  <span className="flex items-center"><Clock size={16} className="mr-1.5 opacity-70" /> {featuredArticle.readTime}</span>
-                </motion.div>
-                <motion.h2
-                  layoutId={`title-${featuredArticle.id}`}
-                  className="font-serif text-3xl md:text-5xl font-bold leading-tight mb-5 text-gray-900 group-hover:text-blue-900 transition-colors duration-300 drop-shadow-sm"
-                >
-                  {featuredArticle.title}
-                </motion.h2>
-                <motion.p
-                  layoutId={`excerpt-${featuredArticle.id}`}
-                  className="text-gray-600 text-lg leading-relaxed line-clamp-3"
-                >
-                  {featuredArticle.excerpt}
-                </motion.p>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Sub Articles Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-gray-200/60 pt-16">
-            {additionalArticles.map((article, index) => (
+          {featuredArticle && (
+            <div className="mb-16">
               <motion.div
-                layoutId={`card-container-${article.id}`}
-                key={article.id}
-                className="group cursor-pointer flex flex-col bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2 relative"
-                onClick={() => setSelectedId(article.id)}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                layoutId={`card-container-${featuredArticle.id}`}
+                className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2"
+                onClick={() => setSelectedId(featuredArticle.id)}
               >
-                <div className="overflow-hidden rounded-3xl aspect-[4/3] mb-5 relative shadow-inner">
+                <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner font-sans">
                   <motion.img
-                    layoutId={`image-${article.id}`}
-                    src={article.imageUrl}
-                    alt={article.title}
+                    layoutId={`image-${featuredArticle.id}`}
+                    src={featuredArticle.imageUrl}
+                    alt={featuredArticle.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                   />
                   <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-3xl pointer-events-none" />
+                  <div className="absolute top-4 left-4 z-10">
+                    <span className="px-4 py-2 bg-white/90 backdrop-blur-md text-xs font-bold uppercase tracking-wider rounded-full shadow-md text-gray-800">
+                      {featuredArticle.category}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col flex-1 px-3 pb-3">
-                  <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-gray-500 mb-4 uppercase tracking-wider font-semibold">
-                    <span className="text-blue-700">{article.category}</span>
+                <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2 font-sans">
+                  <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-gray-500 mb-5 font-medium">
+                    <span className="text-red-700 font-bold">{featuredArticle.author}</span>
                     <span className="text-gray-300">&bull;</span>
-                    <span>{article.readTime}</span>
+                    <span className="flex items-center"><Clock size={16} className="mr-1.5 opacity-70" /> {featuredArticle.readTime}</span>
                   </motion.div>
-                  <motion.h3
-                    layoutId={`title-${article.id}`}
-                    className="font-serif text-xl font-bold leading-snug mb-3 text-gray-900 group-hover:text-blue-900 transition-colors duration-300"
+                  <motion.h2
+                    layoutId={`title-${featuredArticle.id}`}
+                    className="font-serif text-3xl md:text-4xl lg:text-5xl font-bold leading-tight mb-5 text-gray-900 group-hover:text-red-700 transition-colors duration-300 drop-shadow-sm"
                   >
-                    {article.title}
-                  </motion.h3>
+                    {featuredArticle.title}
+                  </motion.h2>
                   <motion.p
-                    layoutId={`excerpt-${article.id}`}
-                    className="text-sm text-gray-600 leading-relaxed line-clamp-2 mt-auto"
+                    layoutId={`excerpt-${featuredArticle.id}`}
+                    className="text-gray-600 text-lg leading-relaxed line-clamp-3"
                   >
-                    {article.excerpt}
+                    {featuredArticle.excerpt}
                   </motion.p>
                 </div>
               </motion.div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* Sub Articles Grid */}
+          {additionalArticles.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-gray-200/60 pt-16">
+              {additionalArticles.map((article, index) => (
+                <motion.div
+                  layoutId={`card-container-${article.id}`}
+                  key={article.id}
+                  className="group cursor-pointer flex flex-col bg-white/20 backdrop-blur-xl rounded-[2rem] p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgb(0,0,0,0.12)] border border-white/20 transition-all duration-500 hover:-translate-y-2 relative font-sans"
+                  onClick={() => setSelectedId(article.id)}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <div className="overflow-hidden rounded-3xl aspect-[4/3] mb-5 relative shadow-inner">
+                    <motion.img
+                      layoutId={`image-${article.id}`}
+                      src={article.imageUrl}
+                      alt={article.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                    />
+                    <div className="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-3xl pointer-events-none" />
+                  </div>
+                  <div className="flex flex-col flex-1 px-3 pb-3">
+                    <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-gray-500 mb-4 uppercase tracking-wider font-semibold">
+                      <span className="text-red-700">{article.category}</span>
+                      <span className="text-gray-300">&bull;</span>
+                      <span>{article.readTime}</span>
+                    </motion.div>
+                    <motion.h3
+                      layoutId={`title-${article.id}`}
+                      className="font-serif text-xl font-bold leading-snug mb-3 text-gray-900 group-hover:text-red-700 transition-colors duration-300"
+                    >
+                      {article.title}
+                    </motion.h3>
+                    <motion.p
+                      layoutId={`excerpt-${article.id}`}
+                      className="text-sm text-gray-600 leading-relaxed line-clamp-2 mt-auto"
+                    >
+                      {article.excerpt}
+                    </motion.p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </motion.div>
       </main>
 
