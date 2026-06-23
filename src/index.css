@@ -14,4 +14,23 @@
     0% { transform: translateX(0%); }
     100% { transform: translateX(-50%); }
   }
+
+  @keyframes ticker-scroll {
+    0% {
+      transform: translate3d(0, 0, 0);
+    }
+    100% {
+      transform: translate3d(-33.333%, 0, 0);
+    }
+  }
+
+  .animate-ticker-scroll {
+    display: inline-flex;
+    white-space: nowrap;
+    animation: ticker-scroll 32s linear infinite;
+  }
+
+  .group\/ticker:hover .animate-ticker-scroll {
+    animation-play-state: paused;
+  }
 }

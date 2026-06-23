@@ -14,57 +14,57 @@ export interface Article {
 export const plnArticles: Article[] = [
   {
     id: "pln-featured",
-    title: "Masa Depan Kecerdasan Buatan dalam Kehidupan Sehari-hari",
-    excerpt: "Bagaimana teknologi AI mulai berintegrasi secara mulus ke dalam rutinitas kita, mengubah cara kita bekerja, berinteraksi, dan memandang dunia. Sebuah eksplorasi tentang harmoni antara mesin dan manusia.",
-    content: "Kecerdasan Buatan (AI) tidak lagi hanya menjadi fiksi ilmiah. Saat ini, AI telah menjadi bagian tak terpisahkan dari kehidupan sehari-hari kita. Dari asisten virtual di smartphone yang membantu mengatur jadwal, hingga algoritma rekomendasi di platform streaming yang menyuguhkan hiburan sesuai selera, AI bekerja di latar belakang untuk membuat hidup lebih efisien.\n\nNamun, perkembangan AI juga membawa tantangan baru. Isu tentang privasi data, bias algoritma, dan masa depan lapangan pekerjaan menjadi topik yang hangat diperdebatkan. Bagaimana kita menyeimbangkan kemudahan yang ditawarkan oleh AI dengan risiko yang mungkin ditimbulkannya?\n\nPara ahli berpendapat bahwa kunci keberhasilan integrasi AI terletak pada regulasi yang bijak dan pemahaman yang mendalam tentang teknologi ini. Kita perlu memastikan bahwa AI dikembangkan dan digunakan secara etis, dengan tetap mempertahankan nilai-nilai kemanusiaan.",
-    author: "Budi Santoso",
-    date: "14 Juni 2026",
-    category: "Teknologi",
-    imageUrl: "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=2000",
+    title: "Musyawarah Daerah VII SP PLN Kalbar: Teguhkan Komitmen Menjaga Kedaulatan Ketenagalistrikan",
+    excerpt: "Musda VII merumuskan langkah strategis perjuangan hak pekerja, peningkatan kompetensi, serta penolakan tegas terhadap unbundling demi menjaga kestabilan energi di Kalimantan Barat.",
+    content: "Serikat Pekerja (SP) PT PLN (Persero) Unit Induk Distribusi Kalimantan Barat sukses menyelenggarakan Musyawarah Daerah (Musda) VII bertempat di Kota Pontianak. Kegiatan konsolidasi organisasi yang berlangsung selama dua hari ini mengusung tekad luhur untuk menegakkan kedaulatan ketenagalistrikan nasional, sekaligus memastikan pelayanan prima tanpa jeda bagi seluruh lapisan masyarakat di Kalimantan Barat.\n\nDalam jalannya musyawarah, disepakati berbagai program kerja jangka pendek dan menengah, di antaranya penajaman kompetensi teknik personel serta program kesejahteraan kolaboratif. Ketua SP PLN Kalbar menegaskan pentingnya solidaritas seluruh anggota dalam mempertahankan kesatuan PLN dari ancaman skema pemecahan (unbundling) yang berisiko mengganggu kestabilan harga energi nasional di masa mendatang.\n\nMusda VII ini juga menjadi momentum emas untuk merekatkan tali silaturahmi antar-unit, memberikan ruang apresiasi bagi ide-ide cemerlang dari pekerja muda, serta menyelaraskan visi perjuangan organisasi dengan dinamika pembangunan daerah Kalimantan Barat yang berdaya saing tinggi.",
+    author: "Humas SP PLN Kalbar",
+    date: "16 Juni 2026",
+    category: "Organisasi",
+    imageUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&q=80&w=1200",
     readTime: "5 menit"
   },
   {
     id: "pln-art-1",
-    title: "Menjelajahi Keindahan Alam Tersembunyi di Timur Indonesia",
-    excerpt: "Sebuah perjalanan menakjubkan ke destinasi wisata yang belum banyak terjamah oleh wisatawan mainstream, menyimpan pesona yang luar biasa.",
-    content: "Timur Indonesia selalu menyimpan misteri dan keindahan yang tak ada habisnya. Jauh dari hingar-bingar kota besar, terdapat pulau-pulau kecil dengan pantai berpasir putih, air laut yang sebening kristal, dan kekayaan bawah laut yang memanjakan mata.\n\nPerjalanan ke wilayah ini mungkin tidak selalu mudah. Tantangan transportasi dan infrastruktur seringkali menjadi kendala. Namun, semua itu akan terbayar lunas saat Anda menginjakkan kaki di tanah surga ini.\n\nMasyarakat lokal yang ramah dan budaya yang masih terjaga keasliannya menambah nilai lebih dari sekadar wisata alam. Ini adalah perjalanan jiwa untuk mensyukuri mahakarya Sang Pencipta.",
-    author: "Siti Rahma",
-    date: "13 Juni 2026",
-    category: "Perjalanan",
-    imageUrl: "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&q=80&w=800",
+    title: "Sinergi Kemanusiaan: SP PLN Kalbar Salurkan Bantuan Darurat untuk Korban Banjir Sintang",
+    excerpt: "Sebagai wujud nyata kepedulian sosial, SP PLN Kalbar bergerak cepat menyalurkan paket sembako dan obat-obatan langsung ke lokasi terdampak banjir.",
+    content: "Bencana banjir yang melanda beberapa wilayah di hulu Kalimantan Barat, khususnya kawasan Sintang, memanggil kepedulian jajaran pengurus dan anggota Serikat Pekerja PLN UID Kalbar. Melalui aksi terpadu 'SP PLN Peduli', tim relawan lapangan dikirim langsung untuk mendistribusikan ratusan paket sembako, selimut, susu anak, dan kebutuhan medis darurat ke posko penyintas.\n\nBantuan dikawal langsung oleh perwakilan SP PLN Kalbar untuk memastikan penyaluran tepat sasaran kepada warga yang paling membutuhkan. Kehadiran tim ini tidak hanya meringankan beban fisik, tetapi juga membawa dukungan moral bagi saudara-saudara kita di tengah musibah.",
+    author: "Relawan SP PLN",
+    date: "14 Juni 2026",
+    category: "Sosial",
+    imageUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&q=80&w=1200",
     readTime: "4 menit"
   },
   {
     id: "pln-art-2",
-    title: "Tren Kuliner Sehat yang Akan Mendominasi Tahun Ini",
-    excerpt: "Dari plant-based diet hingga superfood lokal, ini dia deretan makanan sehat yang sedang naik daun dan digemari kaum urban.",
-    content: "Kesadaran akan gaya hidup sehat semakin meningkat di kalangan masyarakat urban. Hal ini tercermin dari perubahan tren kuliner yang kini lebih berfokus pada nutrisi dan bahan-bahan alami.\n\nDiet berbasis tumbuhan (plant-based diet) menjadi salah satu tren yang paling populer. Banyak restoran mulai menawarkan menu vegan yang tidak hanya sehat, tetapi juga lezat.\n\nSelain itu, bahan-bahan lokal yang kaya nutrisi (superfood) seperti kelor, tempe, dan rempah-rempah tradisional kembali digemari. Ini membuktikan bahwa makanan sehat tidak selalu harus mahal dan diimpor dari luar negeri.",
-    author: "Chef Juna",
+    title: "Sosialisasi Penerapan K3: SP PLN Kalbar Prioritaskan Keselamatan Petugas Lapangan",
+    excerpt: "Melahirkan budaya nihil kecelakaan kerja (zero accident) melalui pemahaman hak keselamatan normatif dan pelatihan intensif standar operasional.",
+    content: "Keselamatan dan Kesehatan Kerja (K3) bukan sekadar aturan, melainkan harga mati bagi seluruh insan kelistrikan. SP PLN UID Kalbar kembali menggelar sosialisasi intensif untuk memperkuat implementasi budaya keselamatan bermutu tinggi pada setiap unit kerja layanan transmisi dan distribusi.\n\nEdukasi ini mengupas tuntas hak normatif pekerja dalam mendapatkan alat pelindung diri (APD) berstandar internasional, serta cara merespons kondisi darurat di lapangan secara taktis. Penurunan angka risiko kerja diharapkan terwujud melalui kesadaran kolektif dari barisan depan ketenagalistrikan.",
+    author: "K3 Lestari",
     date: "12 Juni 2026",
-    category: "Gaya Hidup",
-    imageUrl: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&q=80&w=800",
+    category: "K3 & Keselamatan",
+    imageUrl: "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&q=80&w=1200",
     readTime: "3 menit"
   },
   {
     id: "pln-art-3",
-    title: "Perkembangan Kendaraan Listrik dan Infrastrukturnya",
-    excerpt: "Sejauh mana kesiapan infrastruktur dunia untuk mendukung transisi besar-besaran menuju era kendaraan ramah lingkungan?",
-    content: "Transisi menuju kendaraan bermotor listrik berbasis baterai (KBLBB) tengah menjadi fokus global. Beberapa negara telah menetapkan target ambisius untuk menghentikan penjualan kendaraan berbahan bakar fosil dalam beberapa dekade mendatang.\n\nNamun, tantangan terbesar terletak pada kesiapan infrastruktur. Ketersediaan stasiun pengisian kendaraan listrik (SPKLU) yang memadai sangat krusial untuk mengatasi 'range anxiety' atau kekhawatiran kehabisan baterai di tengah jalan.\n\nSelain itu, pasokan bahan baku baterai dan pengelolaan limbah baterai juga menjadi isu lingkungan yang perlu segera dicarikan solusinya.",
-    author: "Andi Wijaya",
-    date: "11 Juni 2026",
-    category: "Otomotif",
-    imageUrl: "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?auto=format&fit=crop&q=80&w=800",
-    readTime: "6 menit"
+    title: "Mempererat Kebersamaan: Perayaan HUT SP PLN di Pontianak Berlangsung Hangat",
+    excerpt: "Rangkaian Family Gathering dan pemberian santunan bagi anak yatim piatu mewarnai peringatan HUT tahun ini dengan penuh rasa kekeluargaan.",
+    content: "Suasana kehangatan menyelimuti perayaan Hari Ulang Tahun Serikat Pekerja PLN yang menggelora di kota Pontianak. Mengusung konsep kebersamaan keluarga, acara dipadati keluarga pegawai yang antusias berpartisipasi dalam aneka lomba ketangkasan, gelar seni budaya lokal, hingga malam keakraban.\n\nPuncak peringatan dihiasi dengan pembagian santunan sosial kepada panti asuhan setempat, menegaskan jati diri SP PLN sebagai elemen bangsa yang senantiasa menebarkan manfaat bagi kemaslahatan masyarakat sekitar.",
+    author: "Panitia HUT",
+    date: "10 Juni 2026",
+    category: "Kegiatan",
+    imageUrl: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&q=80&w=1200",
+    readTime: "4 menit"
   },
   {
     id: "pln-art-4",
-    title: "Seni Minimalisme: Mengurangi Barang untuk Menambah Makna",
-    excerpt: "Mengapa semakin banyak orang yang mulai menerapkan gaya hidup minimalis di tengah gempuran tren konsumerisme modern.",
-    content: "Di tengah gempuran iklan dan tuntutan untuk terus mengonsumsi, gaya hidup minimalis hadir sebagai oase. Minimalisme bukan hanya tentang membuang barang, tetapi tentang memilih dengan bijak apa yang benar-benar memberikan nilai dalam hidup kita.\n\nDengan mengurangi barang-barang yang tidak perlu, kita dapat menghemat ruang, waktu, dan uang. Lebih dari itu, minimalisme membebaskan kita dari beban psikologis yang seringkali melekat pada kepemilikan materi.\n\nKonsep ini mengajarkan kita untuk lebih bersyukur dan menghargai pengalaman daripada sekadar memiliki barang.",
-    author: "Rina Melati",
-    date: "10 Juni 2026",
-    category: "Seni & Budaya",
-    imageUrl: "https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&q=80&w=800",
+    title: "Aksi Nyata Hijaukan Pantai: SP PLN Kalbar Tanam Mangrove di Pesisir Mempawah",
+    excerpt: "Menjaga keseimbangan ekosistem pantai dan mencegah abrasi hebat dengan menanam bibit mangrove berkualitas bersama komunitas lingkungan.",
+    content: "Merespons ancaman abrasi pantai yang kian memprihatinkan di wilayah pesisir Kalimantan Barat, SP PLN UID Kalbar meluncurkan inisiatif peduli bumi dengan melakukan penanaman bibit pohon mangrove di pesisir kabupaten Mempawah.\n\nKegiatan ini melibatkan partisipasi aktif ratusan pengurus, kader muda pekerja, serta dinas kelautan setempat. Sinergi ini merupakan wujud dedikasi Serikat Pekerja yang tidak hanya peduli pada ketenagalistrikan, tetapi juga berkomitmen merawat kelestarian lingkungan hidup demi generasi masa kini dan masa depan.",
+    author: "Humas SP PLN",
+    date: "08 Juni 2026",
+    category: "Lingkungan",
+    imageUrl: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=800",
     readTime: "4 menit"
   }
 ];
@@ -184,5 +184,65 @@ export const internasionalArticles: Article[] = [
     category: "Arsitektur",
     imageUrl: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=800",
     readTime: "4 menit"
+  }
+];
+
+export interface ActivityPhoto {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  imageUrl: string;
+  location: string;
+}
+
+export const activityPhotos: ActivityPhoto[] = [
+  {
+    id: "act-1",
+    title: "Musyawarah Daerah VII SP PLN Kalbar",
+    description: "Kegiatan konsolidasi organisasi SP PLN Kalimantan Barat untuk merumuskan aspirasi pegawai serta mendorong sinergi yang harmonis demi kemajuan ketenagalistrikan daerah.",
+    date: "10 April 2026",
+    location: "Pontianak, Kalimantan Barat",
+    imageUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "act-2",
+    title: "Aksi Sosial Peduli Korban Banjir",
+    description: "Serikat Pekerja PLN Kalbar menyalurkan paket bantuan sembako dan kebutuhan darurat langsung kepada warga terdampak banjir di wilayah hulu Kalimantan Barat.",
+    date: "25 Mei 2026",
+    location: "Sintang, Kalimantan Barat",
+    imageUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "act-3",
+    title: "Edukasi Keselamatan Kerja & K3",
+    description: "Sesi sosialisasi dan edukasi mengenai pentingnya penerapan prinsip keselamatan dan kesehatan kerja (K3) serta pemenuhan hak-hak normatif para petugas lapangan.",
+    date: "12 Maret 2026",
+    location: "Singkawang, Kalimantan Barat",
+    imageUrl: "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "act-4",
+    title: "Family Gathering & Pembagian Santunan",
+    description: "Meningkatkan jalinan silaturahmi, solidaritas, dan hubungan kekeluargaan di antara keluarga pegawai PLN Kalbar dalam merayakan HUT Serikat Pekerja.",
+    date: "05 Januari 2026",
+    location: "Pontianak, Kalimantan Barat",
+    imageUrl: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "act-5",
+    title: "Rapat Kerja Wilayah (Rakerwil) I",
+    description: "Diskusi mendalam bersama jajaran manajemen untuk membahas peningkatan keselamatan kerja, struktur kesejahteraan pegawai, dan efisiensi operasional ke depan.",
+    date: "18 Februari 2026",
+    location: "Pontianak, Kalimantan Barat",
+    imageUrl: "https://images.unsplash.com/photo-1431540015161-0bf868a2d407?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "act-6",
+    title: "Penghijauan & Penanaman 1000 Pohon",
+    description: "Wujud nyata kepedulian lingkungan dari SP PLN Kalimantan Barat melalui program penanaman bibit pohon mangrove untuk mencegah abrasi pantai.",
+    date: "04 April 2026",
+    location: "Mempawah, Kalimantan Barat",
+    imageUrl: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=800"
   }
 ];
