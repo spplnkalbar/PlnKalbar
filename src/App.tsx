@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Clock, Share2, Zap, Flag, Globe, Camera, X, MapPin, Mail, Phone, Menu, User, Image as ImageIcon } from 'lucide-react';
-import { plnArticles, nasionalArticles, internasionalArticles, Article, activityPhotos, ActivityPhoto } from './data';
+import { Menu, ArrowLeft, Clock, Share2, Zap, Flag, Globe, Camera, X, MapPin, Mail, Phone } from 'lucide-react';
+import { plnArticles, nasionalArticles, internasionalArticles, activityPhotos } from './data';
+import type { Article, ActivityPhoto } from './data';
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -10,7 +11,6 @@ export default function App() {
   const [isPhotoGalleryOpen, setIsPhotoGalleryOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<ActivityPhoto | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function App() {
   }, [selectedId, isPhotoGalleryOpen, isProfileOpen, selectedPhoto]);
 
   return (
-    <div className="min-h-screen font-sans text-stone-900 selection:bg-red-600 selection:text-white relative z-0">
+    <div className="min-h-screen flex flex-col font-sans text-stone-900 selection:bg-red-600 selection:text-white relative z-0">
       {/* Base Background Environment */}
       <div className="fixed inset-0 bg-white -z-30 pointer-events-none" />
 
@@ -65,14 +65,14 @@ export default function App() {
 
       {/* Navigation */}
       <motion.header
-        className={`fixed top-0 inset-x-0 z-40 transition-colors duration-300 border-b border-[#860120] ${
-          isScrolled ? 'bg-[#860120]/95 backdrop-blur-md shadow-md' : 'bg-[#860120]/90 backdrop-blur-md'
+        className={`fixed top-0 inset-x-0 z-40 transition-all duration-300 border-b border-[#860120] flex flex-col justify-center bg-gradient-to-b ${
+          isScrolled ? 'from-[#860120]/95 to-[#5a0015]/95 backdrop-blur-md shadow-md h-[72px] md:h-[88px]' : 'from-[#860120]/90 to-[#5a0015]/90 backdrop-blur-md h-[88px] md:h-[110px]'
         }`}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       >
-        <div className="max-w-7xl mx-auto px-6 h-[86px] flex items-center justify-between text-white select-none">
+        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between text-white select-none w-full">
           <div 
             onClick={() => {
               setSelectedId(null);
@@ -85,7 +85,7 @@ export default function App() {
             <img 
               src="https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000" 
               alt="Logo SP PLN" 
-              className="w-[88px] h-[98px] object-contain hover:scale-105 transition-transform duration-300" 
+              className={`object-contain hover:scale-105 transition-all duration-300 ${isScrolled ? 'w-[50px] h-[58px] md:w-[70px] md:h-[78px]' : 'w-[60px] h-[68px] md:w-[88px] md:h-[98px]'}`} 
               referrerPolicy="no-referrer"
             />
           </div>
@@ -96,243 +96,325 @@ export default function App() {
               setIsProfileOpen(false);
               setSelectedPhoto(null);
             }}
-            className="font-serif text-xl sm:text-2xl lg:text-3.5xl font-bold tracking-wide drop-shadow-md text-center px-4 whitespace-nowrap truncate cursor-pointer hover:opacity-90 transition-opacity flex-1"
+            className="font-serif text-lg sm:text-2xl lg:text-3.5xl font-bold tracking-wide drop-shadow-md text-center px-2 sm:px-4 cursor-pointer hover:opacity-90 transition-opacity flex-1"
           >
             Berita SP PLN Kalimantan Barat
           </div>
-          <div className="relative flex items-center gap-2.5 sm:gap-4 font-sans pointer-events-auto">
-            <div className="relative">
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-full bg-white/20 hover:bg-white/30 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer"
-              >
-                <Menu size={16} />
-                <span className="hidden sm:inline">Menu</span>
-              </button>
-
-              <AnimatePresence>
-                {isMenuOpen && (
-                  <motion.div
-                    key="backdrop"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsMenuOpen(false)}
-                  />
-                )}
-                {isMenuOpen && (
-                  <motion.div
-                    key="menu-content"
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    transition={{ duration: 0.2 }}
-                    className="absolute right-0 top-full mt-2 w-48 rounded-xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden font-sans z-50 text-stone-800"
-                  >
-                    <div className="py-1">
-                      <button
-                        onClick={() => {
-                          setIsProfileOpen(true);
-                          setIsPhotoGalleryOpen(false);
-                          setIsMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm hover:bg-stone-50 flex items-center gap-3 transition-colors cursor-pointer"
-                      >
-                        <User size={16} className="text-teal-600 shrink-0" />
-                        <span className="font-semibold">Profil</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsPhotoGalleryOpen(true);
-                          setIsProfileOpen(false);
-                          setIsMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm hover:bg-stone-50 flex items-center gap-3 transition-colors cursor-pointer"
-                      >
-                        <ImageIcon size={16} className="text-teal-600 shrink-0" />
-                        <span className="font-semibold">Foto Kegiatan</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
+          <div className={`shrink-0 transition-all duration-300 ${isScrolled ? 'w-[50px] md:w-[70px]' : 'w-[60px] md:w-[88px]'}`} /> {/* Spacer for centering */}
         </div>
       </motion.header>
 
-      {/* Main Content */}
-      <main className="relative z-10 pt-28 pb-20 px-6 max-w-7xl mx-auto">
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="mb-6 flex items-center justify-between border-b border-stone-300/70 pb-4"
-        >
-          <h1 className="font-serif text-4xl md:text-5xl lg:text-7xl font-bold text-stone-900 animate-fade-in">
+      {/* Sub Navigation */}
+      <motion.div 
+        className={`fixed inset-x-0 z-30 transition-all duration-300 bg-white/50 backdrop-blur-md shadow-sm border-b border-stone-200/50 py-3 ${
+          isScrolled ? 'top-[72px] md:top-[88px]' : 'top-[88px] md:top-[110px]'
+        }`}
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <div className="w-full max-w-4xl mx-auto px-4 flex flex-wrap items-center justify-center gap-2 sm:gap-4">
+          <button 
+            onClick={() => {
+              setSelectedId(null);
+              setIsProfileOpen(false);
+              setIsPhotoGalleryOpen(false);
+            }}
+            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer ${
+              !isProfileOpen && !isPhotoGalleryOpen && !selectedId
+                ? 'bg-red-700 text-white shadow-md' 
+                : 'bg-white/70 text-stone-700 hover:bg-white/90'
+            }`}
+          >
             Edisi Hari Ini
-          </h1>
-          <div className="hidden md:block text-sm font-medium text-stone-500 uppercase tracking-widest">
-            {new Date().toLocaleDateString('id-ID', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </div>
-        </motion.div>
-
-        {/* Tab Pages / Categories Selector */}
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="mb-12 flex items-center overflow-x-auto no-scrollbar -mx-6 px-6 sm:mx-0 sm:px-0 py-1 gap-3 scroll-smooth select-none"
-          style={{ WebkitOverflowScrolling: 'touch' }}
-        >
-          <button
-            id="tab-pln"
-            onClick={() => setActiveTab('pln')}
-            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
-              activeTab === 'pln'
-                ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
-                : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
+          </button>
+          <button 
+            onClick={() => {
+              setIsProfileOpen(true);
+              setIsPhotoGalleryOpen(false);
+              setSelectedId(null);
+            }}
+            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer ${
+              isProfileOpen 
+                ? 'bg-red-700 text-white shadow-md' 
+                : 'bg-white/70 text-stone-700 hover:bg-white/90'
             }`}
           >
-            <span>Berita SP PLN Kalbar</span>
+            Profil SP PLN Kalbar
           </button>
-          
-          <button
-            id="tab-nasional"
-            onClick={() => setActiveTab('nasional')}
-            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
-              activeTab === 'nasional'
-                ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
-                : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
+          <button 
+            onClick={() => {
+              setIsPhotoGalleryOpen(true);
+              setIsProfileOpen(false);
+              setSelectedId(null);
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer ${
+              isPhotoGalleryOpen 
+                ? 'bg-red-700 text-white shadow-md' 
+                : 'bg-white/70 text-stone-700 hover:bg-white/90'
             }`}
           >
-            <span>Berita Nasional</span>
+            <Camera size={14} className={isPhotoGalleryOpen ? "text-white" : "text-stone-500"} />
+            <span>Foto Kegiatan</span>
           </button>
+        </div>
+      </motion.div>
 
-          <button
-            id="tab-internasional"
-            onClick={() => setActiveTab('internasional')}
-            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
-              activeTab === 'internasional'
-                ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
-                : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
-            }`}
-          >
-            <span>Berita Internasional</span>
-          </button>
-        </motion.div>
+      {/* Main Content */}
+      <main className="flex-1 relative z-10 pt-44 md:pt-48 pb-20 px-6 max-w-7xl mx-auto w-full">
+        <AnimatePresence mode="wait">
+          {isPhotoGalleryOpen ? (
+            <motion.div
+              key="photo-gallery"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            >
+              <div className="mb-6 flex items-center justify-between border-b border-stone-300/70 pb-4">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 shadow-sm">
+                    <Camera size={28} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h1 className="font-serif text-3xl md:text-5xl font-black text-stone-900 leading-tight">
+                      Galeri Foto Kegiatan
+                    </h1>
+                    <p className="text-sm text-stone-500 font-sans font-medium uppercase tracking-wider mt-1">
+                      SP PLN UID Kalimantan Barat
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-        {/* Featured Article & Sub Articles Section with dynamic key for smooth transitions */}
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
-        >
-          {featuredArticle && (
-            <div className="mb-16">
-              <motion.div
-                
-                className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/75 backdrop-blur-md rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] border border-stone-200/50 transition-all duration-500 hover:-translate-y-2"
-                onClick={() => setSelectedId(featuredArticle.id)}
+              {activityPhotos.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pt-6">
+                  {activityPhotos.map((photo) => (
+                    <div
+                      key={photo.id}
+                      onClick={() => setSelectedPhoto(photo)}
+                      className="group bg-white/75 backdrop-blur-md rounded-3xl overflow-hidden border border-stone-200/50 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] transition-all duration-500 cursor-pointer flex flex-col active:scale-[0.98] transform hover:-translate-y-2"
+                    >
+                      <div className="relative aspect-[4/3] overflow-hidden bg-stone-100 shadow-inner">
+                        <img
+                          src={photo.imageUrl}
+                          alt={photo.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <span className="absolute bottom-4 left-4 bg-black/75 backdrop-blur-md text-xs font-bold text-white px-3 py-1.5 rounded-full border border-white/10 shadow-sm">
+                          {photo.date}
+                        </span>
+                      </div>
+                      <div className="p-6 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-serif text-xl font-extrabold leading-snug mb-2 text-gray-950 group-hover:text-red-700 transition-colors duration-300">
+                            {photo.title}
+                          </h3>
+                          <p className="text-xs text-red-700 font-bold uppercase tracking-wider mb-3">
+                            📍 {photo.location}
+                          </p>
+                          <p className="text-sm text-stone-600 line-clamp-3 leading-relaxed mb-4 font-medium">
+                            {photo.description}
+                          </p>
+                        </div>
+                        <span className="text-xs font-black text-red-700 hover:text-red-800 inline-flex items-center gap-1.5 uppercase tracking-wide">
+                          Lihat Detail Foto &rarr;
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-28 bg-white/50 backdrop-blur-md rounded-[2rem] border border-stone-200/50 border-dashed text-center mt-8">
+                  <div className="w-20 h-20 mb-6 bg-white border border-stone-200/80 rounded-full flex items-center justify-center text-stone-400 shadow-sm">
+                    <Camera size={36} />
+                  </div>
+                  <h3 className="font-serif text-3xl font-black text-stone-800 mb-3">Belum Ada Foto</h3>
+                  <p className="text-stone-500 max-w-md text-lg leading-relaxed">
+                    Saat ini belum ada dokumentasi kegiatan yang diunggah. Silakan kembali lagi nanti.
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="news-feed"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            >
+              <div className="mb-6 flex items-center justify-between border-b border-stone-300/70 pb-4">
+                <h1 className="font-serif text-4xl md:text-5xl lg:text-7xl font-bold text-stone-900 animate-fade-in">
+                  Edisi Hari Ini
+                </h1>
+                <div className="hidden md:block text-sm font-medium text-stone-500 uppercase tracking-widest">
+                  {new Date().toLocaleDateString('id-ID', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </div>
+              </div>
+
+              {/* Tab Pages / Categories Selector */}
+              <div
+                className="mb-12 flex items-center overflow-x-auto no-scrollbar -mx-6 px-6 sm:mx-0 sm:px-0 py-1 gap-3 scroll-smooth select-none"
+                style={{ WebkitOverflowScrolling: 'touch' }}
               >
-                <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner font-sans">
-                  <motion.img
-                    
-                    src={featuredArticle.imageUrl}
-                    alt={featuredArticle.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-                  />
-                  <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
-                  <div className="absolute top-4 left-4 z-10">
-                    <span className="px-4 py-2 bg-black/85 backdrop-blur-md text-xs font-bold uppercase tracking-wider rounded-full shadow-md text-stone-100 border border-white/10">
-                      {featuredArticle.category}
-                    </span>
-                  </div>
-                </div>
-                <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2 font-sans">
-                  <motion.div  className="flex items-center space-x-3 text-sm text-stone-800 mb-5 font-semibold">
-                    <span className="text-red-700 font-extrabold">{featuredArticle.author}</span>
-                    <span className="text-stone-400">&bull;</span>
-                    <span className="flex items-center text-stone-900"><Clock size={16} className="mr-1.5 opacity-80" /> {featuredArticle.readTime}</span>
-                  </motion.div>
-                  <motion.h2
-                    
-                    className="font-serif text-3xl md:text-4xl lg:text-5xl font-black leading-tight mb-5 text-gray-950 group-hover:text-red-700 transition-colors duration-300 drop-shadow-sm"
-                  >
-                    {featuredArticle.title}
-                  </motion.h2>
-                  <motion.p
-                    
-                    className="text-stone-900 text-lg font-medium leading-relaxed line-clamp-3"
-                  >
-                    {featuredArticle.excerpt}
-                  </motion.p>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* Sub Articles Grid */}
-          {additionalArticles.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-stone-300 pt-16">
-              {additionalArticles.map((article, index) => (
-                <motion.div
-                  
-                  key={article.id}
-                  className="group cursor-pointer flex flex-col bg-white/75 backdrop-blur-md rounded-[2rem] p-4 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] border border-stone-200/50 transition-all duration-500 hover:-translate-y-2 relative font-sans"
-                  onClick={() => setSelectedId(article.id)}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                <button
+                  id="tab-pln"
+                  onClick={() => setActiveTab('pln')}
+                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
+                    activeTab === 'pln'
+                      ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
+                      : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
+                  }`}
                 >
-                  <div className="overflow-hidden rounded-3xl aspect-[4/3] mb-5 relative shadow-inner">
-                    <motion.img
-                      
-                      src={article.imageUrl}
-                      alt={article.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-                    />
-                    <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
-                  </div>
-                  <div className="flex flex-col flex-1 px-3 pb-3">
-                    <motion.div  className="flex items-center space-x-2 text-xs text-stone-800 mb-4 uppercase tracking-wider font-bold">
-                      <span className="text-red-700">{article.category}</span>
-                      <span className="text-stone-400">&bull;</span>
-                      <span className="text-stone-900">{article.readTime}</span>
+                  <span>Berita SP PLN Kalbar</span>
+                </button>
+                
+                <button
+                  id="tab-nasional"
+                  onClick={() => setActiveTab('nasional')}
+                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
+                    activeTab === 'nasional'
+                      ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
+                      : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
+                  }`}
+                >
+                  <span>Berita Nasional</span>
+                </button>
+
+                <button
+                  id="tab-internasional"
+                  onClick={() => setActiveTab('internasional')}
+                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
+                    activeTab === 'internasional'
+                      ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
+                      : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
+                  }`}
+                >
+                  <span>Berita Internasional</span>
+                </button>
+              </div>
+
+              {/* Featured Article & Sub Articles Section with dynamic key for smooth transitions */}
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+              >
+                {featuredArticle ? (
+                  <div className="mb-16">
+                    <motion.div
+                      layoutId={`card-container-${featuredArticle.id}`}
+                      className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/75 backdrop-blur-md rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] border border-stone-200/50 transition-all duration-500 hover:-translate-y-2"
+                      onClick={() => setSelectedId(featuredArticle.id)}
+                    >
+                      <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner font-sans">
+                        <motion.img
+                          layoutId={`image-${featuredArticle.id}`}
+                          src={featuredArticle.imageUrl}
+                          alt={featuredArticle.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                        />
+                        <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
+                        <div className="absolute top-4 left-4 z-10">
+                          <span className="px-4 py-2 bg-black/85 backdrop-blur-md text-xs font-bold uppercase tracking-wider rounded-full shadow-md text-stone-100 border border-white/10">
+                            {featuredArticle.category}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2 font-sans">
+                        <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-stone-800 mb-5 font-semibold">
+                          <span className="text-red-700 font-extrabold">{featuredArticle.author}</span>
+                          <span className="text-stone-400">&bull;</span>
+                          <span className="flex items-center text-stone-900"><Clock size={16} className="mr-1.5 opacity-80" /> {featuredArticle.readTime}</span>
+                        </motion.div>
+                        <motion.h2
+                          layoutId={`title-${featuredArticle.id}`}
+                          className="font-serif text-3xl md:text-4xl lg:text-5xl font-black leading-tight mb-5 text-gray-950 group-hover:text-red-700 transition-colors duration-300 drop-shadow-sm"
+                        >
+                          {featuredArticle.title}
+                        </motion.h2>
+                        <motion.p
+                          layoutId={`excerpt-${featuredArticle.id}`}
+                          className="text-stone-900 text-lg font-medium leading-relaxed line-clamp-3"
+                        >
+                          {featuredArticle.excerpt}
+                        </motion.p>
+                      </div>
                     </motion.div>
-                    <motion.h3
-                      
-                      className="font-serif text-xl font-extrabold leading-snug mb-3 text-gray-950 group-hover:text-red-700 transition-colors duration-300"
-                    >
-                      {article.title}
-                    </motion.h3>
-                    <motion.p
-                      
-                      className="text-sm text-stone-900 font-medium leading-relaxed line-clamp-2 mt-auto"
-                    >
-                      {article.excerpt}
-                    </motion.p>
                   </div>
-                </motion.div>
-              ))}
-            </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 bg-white/50 backdrop-blur-md rounded-3xl border border-stone-200 border-dashed text-center">
+                    <div className="w-16 h-16 mb-4 bg-stone-100 rounded-full flex items-center justify-center text-stone-400">
+                      <Menu size={32} />
+                    </div>
+                    <h3 className="font-serif text-2xl font-bold text-stone-800 mb-2">Belum Ada Berita</h3>
+                    <p className="text-stone-500 max-w-md">Saat ini belum ada artikel yang dipublikasikan pada kategori ini. Silakan kembali lagi nanti.</p>
+                  </div>
+                )}
+
+                {/* Sub Articles Grid */}
+                {additionalArticles.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-stone-300 pt-16">
+                    {additionalArticles.map((article, index) => (
+                      <motion.div
+                        layoutId={`card-container-${article.id}`}
+                        key={article.id}
+                        className="group cursor-pointer flex flex-col bg-white/75 backdrop-blur-md rounded-[2rem] p-4 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] border border-stone-200/50 transition-all duration-500 hover:-translate-y-2 relative font-sans"
+                        onClick={() => setSelectedId(article.id)}
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, margin: "-50px" }}
+                        transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                      >
+                        <div className="overflow-hidden rounded-3xl aspect-[4/3] mb-5 relative shadow-inner">
+                          <motion.img
+                            layoutId={`image-${article.id}`}
+                            src={article.imageUrl}
+                            alt={article.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                          />
+                          <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
+                        </div>
+                        <div className="flex flex-col flex-1 px-3 pb-3">
+                          <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-stone-800 mb-4 uppercase tracking-wider font-bold">
+                            <span className="text-red-700">{article.category}</span>
+                            <span className="text-stone-400">&bull;</span>
+                            <span className="text-stone-900">{article.readTime}</span>
+                          </motion.div>
+                          <motion.h3
+                            layoutId={`title-${article.id}`}
+                            className="font-serif text-xl font-extrabold leading-snug mb-3 text-gray-950 group-hover:text-red-700 transition-colors duration-300"
+                          >
+                            {article.title}
+                          </motion.h3>
+                          <motion.p
+                            layoutId={`excerpt-${article.id}`}
+                            className="text-sm text-stone-900 font-medium leading-relaxed line-clamp-2 mt-auto"
+                          >
+                            {article.excerpt}
+                          </motion.p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            </motion.div>
           )}
-        </motion.div>
+        </AnimatePresence>
       </main>
 
       {/* Footer Informasi */}
-      <footer id="footer-informasi" className="relative z-20 bg-white/10 backdrop-blur-sm text-gray-800 border-t border-[#860120]/20 font-sans">
+      <footer id="footer-informasi" className="mt-auto shrink-0 relative z-20 bg-white/10 backdrop-blur-sm text-gray-800 border-t border-[#860120]/20 font-sans">
         <div className="max-w-7xl mx-auto px-6 py-12 md:py-16 grid grid-cols-1 lg:grid-cols-12 gap-10">
           {/* Logo & Deskripsi */}
           <div className="lg:col-span-7 flex flex-col space-y-4">
@@ -369,17 +451,17 @@ export default function App() {
               <li className="flex items-start gap-2.5">
                 <MapPin size={16} className="text-red-700 shrink-0 mt-0.5" />
                 <span className="leading-relaxed text-gray-850">
-                  Kantor Sekretariat SP PLN UID Kalbar, Jl. Adi Sucipto No. 23, Pontianak, Kalimantan Barat
+                  Jl. Gusti Sulung Lelanang No.14, Benua Melayu Darat, Kec. Pontianak Sel., Kota Pontianak, Kalimantan Barat 78243
                 </span>
               </li>
               <li className="flex items-center gap-2.5">
                 <Mail size={16} className="text-red-700 shrink-0" />
-                <a href="mailto:sp.pln.uidkalbar@gmail.com" className="hover:text-red-900 text-gray-900 transition-colors underline decoration-red-500/30 underline-offset-4">
-                  sp.pln.uidkalbar@gmail.com
-                </a>
+                <span className="text-gray-900">
+                  dpdspplnkalbar@gmail.com
+                </span>
               </li>
               <li className="flex items-center gap-2.5">
-                <Phone size={16} className="text-emerald-750 shrink-0" />
+                <Phone size={16} className="text-emerald-700 shrink-0" />
                 <span className="font-mono text-gray-900">
                   +62 (561) 732-023
                 </span>
@@ -392,7 +474,7 @@ export default function App() {
         <div className="border-t border-[#860120]/10 py-6 bg-black/5 text-gray-700 font-medium">
           <div className="max-w-7xl mx-auto px-6 text-center text-xs">
             <p className="leading-relaxed">
-              &copy; {new Date().getFullYear()} Serikat Pekerja PLN Unit Induk Distribusi Kalimantan Barat. Semua Hak Dilindungi.
+              &copy; {new Date().getFullYear()} Serikat Pekerja PLN Unit Induk Distribusi Kalimantan Barat. Dikelola Tim Humas.
             </p>
           </div>
         </div>
@@ -402,7 +484,6 @@ export default function App() {
       <AnimatePresence>
         {selectedId && selectedArticle && (
           <motion.div
-            key="article-modal"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -417,6 +498,7 @@ export default function App() {
             
             {/* Modal Content */}
             <motion.div
+              layoutId={`card-container-${selectedArticle.id}`}
               className="relative w-full max-w-4xl max-h-[90vh] bg-white border border-stone-200/90 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
               style={{ borderRadius: '24px' }}
             >
@@ -439,6 +521,7 @@ export default function App() {
 
                 <div className="relative h-64 sm:h-80 md:h-[50vh] w-full shrink-0 -mt-[68px] sm:-mt-[84px]">
                   <motion.img
+                    layoutId={`image-${selectedArticle.id}`}
                     src={selectedArticle.imageUrl}
                     alt={selectedArticle.title}
                     className="w-full h-full object-cover absolute inset-0"
@@ -455,7 +538,7 @@ export default function App() {
                 
                 {/* Article Body */}
                 <div className="px-6 py-8 sm:px-12 sm:py-12 md:px-16 md:py-16 bg-stone-50/90 relative z-20">
-                  <motion.div className="flex items-center space-x-4 text-sm text-stone-500 mb-6 font-semibold">
+                  <motion.div layoutId={`meta-${selectedArticle.id}`} className="flex items-center space-x-4 text-sm text-stone-500 mb-6 font-semibold">
                     <div className="flex items-center font-medium text-stone-900">
                       <div className="w-8 h-8 rounded-full bg-stone-200 mr-3 flex items-center justify-center text-stone-700 font-bold border border-stone-300">
                         {selectedArticle.author.charAt(0)}
@@ -469,12 +552,14 @@ export default function App() {
                   </motion.div>
                   
                   <motion.h1
+                    layoutId={`title-${selectedArticle.id}`}
                     className="font-serif text-3xl sm:text-4xl md:text-5xl font-black text-stone-900 mb-6 leading-tight"
                   >
                     {selectedArticle.title}
                   </motion.h1>
                   
                   <motion.p
+                    layoutId={`excerpt-${selectedArticle.id}`}
                     className="text-xl sm:text-2xl text-stone-600 font-serif italic mb-10 leading-relaxed border-l-4 border-stone-300 pl-6"
                   >
                     {selectedArticle.excerpt}
@@ -499,96 +584,10 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Photo Gallery, Lightbox, and Profile Modals */}
+      {/* Lightbox, and Profile Modals */}
       <AnimatePresence>
-        {isPhotoGalleryOpen && (
-          <motion.div
-            key="gallery-modal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
-          >
-            {/* Backdrop */}
-            <div
-              className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm"
-              onClick={() => setIsPhotoGalleryOpen(false)}
-            />
-            
-            {/* Modal Content */}
-            <motion.div
-              initial={{ scale: 0.95, y: 30 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 30 }}
-              transition={{ duration: 0.3 }}
-              className="relative w-full max-w-5xl max-h-[90vh] bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10"
-            >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-stone-200 bg-stone-50">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-red-50 text-red-600 rounded-lg border border-red-100/65">
-                    <Camera size={22} className="animate-pulse" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl md:text-2xl font-serif font-black text-stone-900">Galeri Foto Kegiatan</h2>
-                    <p className="text-xs text-stone-500 font-sans font-medium">Serikat Pekerja PLN Unit Induk Distribusi Kalimantan Barat</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsPhotoGalleryOpen(false)}
-                  className="p-2 hover:bg-stone-100 text-stone-400 hover:text-stone-700 rounded-full transition-colors cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              {/* Modal Body - Photo Cards Grid */}
-              <div className="overflow-y-auto flex-1 p-6 md:p-8 bg-stone-50/50">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {activityPhotos.map((photo) => (
-                    <div
-                      key={photo.id}
-                      onClick={() => setSelectedPhoto(photo)}
-                      className="group bg-white rounded-2xl overflow-hidden border border-stone-200/80 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col active:scale-[0.98] transform"
-                    >
-                      <div className="relative aspect-[4/3] overflow-hidden bg-stone-100">
-                        <img
-                          src={photo.imageUrl}
-                          alt={photo.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        <span className="absolute bottom-3 left-3 bg-black/65 backdrop-blur-md text-[10px] font-bold text-white px-2 py-1 rounded-md">
-                          {photo.date}
-                        </span>
-                      </div>
-                      <div className="p-5 flex-1 flex flex-col justify-between">
-                        <div>
-                          <h3 className="font-serif font-bold text-stone-900 group-hover:text-red-600 transition-colors line-clamp-1 mb-1.5 font-black">
-                            {photo.title}
-                          </h3>
-                          <p className="text-xs text-stone-500 font-mono font-semibold uppercase tracking-wider mb-2">
-                            📍 {photo.location}
-                          </p>
-                          <p className="text-xs text-stone-600 line-clamp-3 leading-relaxed mb-4">
-                            {photo.description}
-                          </p>
-                        </div>
-                        <span className="text-xs font-bold text-red-600 hover:text-red-700 inline-flex items-center gap-1 font-black">
-                          Lihat Detail & Foto Penuh &rarr;
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
         {selectedPhoto && (
           <motion.div
-            key="photo-lightbox"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -643,7 +642,6 @@ export default function App() {
 
         {isProfileOpen && (
           <motion.div
-            key="profile-modal"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -666,9 +664,6 @@ export default function App() {
               {/* Modal Header */}
               <div className="flex items-center justify-between p-6 border-b border-stone-200 bg-stone-50">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-red-50 text-red-600 rounded-lg border border-red-100">
-                    <Globe size={22} className="animate-spin-slow" />
-                  </div>
                   <div>
                     <h2 className="text-xl md:text-2xl font-serif font-black text-stone-900">Profil Serikat Pekerja</h2>
                     <p className="text-xs text-stone-500 font-sans font-medium">SP PLN Unit Induk Distribusi Kalimantan Barat</p>
@@ -689,7 +684,8 @@ export default function App() {
                     <img
                       src="https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000"
                       alt="Logo SP PLN"
-                      className="w-32 h-36 object-contain"
+                      className="object-contain"
+                      style={{ height: '250px', width: '200px' }}
                       referrerPolicy="no-referrer"
                     />
                   </div>
@@ -703,17 +699,14 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div className="p-4 bg-red-50/70 rounded-2xl border border-red-100">
                       <h4 className="font-sans font-bold text-red-800 mb-1.5">Visi</h4>
-                      <p className="text-xs leading-relaxed text-stone-700">
-                        Terwujudnya Serikat Pekerja yang andal, berintegritas, mandiri, profesional, serta senantiasa memperjuangkan kesejahteraan anggota guna mendukung ketenagalistrikan nasional.
-                      </p>
+                      <div className="text-xs leading-relaxed text-stone-700 space-y-2">
+                        <p>Menjaga kesinambungan PT PLN (Persero) agar tetap tumbuh dan berkembang sebagai Pengemban Amanah Konstitusi dibidang Ketenagalistrikan yang terintegrasi dari Pembangkitan, transmisi, distribusi dan penjualan;</p>
+                        <p>Meningkatkan Kesejahteraan Insan PLN dan mengawal pembinaan Sistim Karir pegawai yang berkeadilan dan berkesinambungan sesuai dengan kompetensinya agar PLN sebagai pengemban Amanah Konstitusi dibidang ketenagalistrikan dikelola dengan baik dan benar sesuai prinsip Good Coorporate Governance (GCG);</p>
+                      </div>
                     </div>
                     <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-100">
                       <h4 className="font-sans font-bold text-amber-800 mb-1.5">Misi</h4>
-                      <ul className="text-xs list-disc pl-4 space-y-1 text-stone-700 leading-relaxed">
-                        <li>Mengadvokasi hak, keselamatan, dan keharmonisan lingkungan kerja anggota.</li>
-                        <li>Membina kepemimpinan &amp; integritas insan kelistrikan secara berkelanjutan.</li>
-                        <li>Sinergi konstruktif dengan Manajemen dalam penyaluran tenaga listrik andal.</li>
-                      </ul>
+                      <p className="text-xs leading-relaxed text-stone-700">&nbsp;</p>
                     </div>
                   </div>
 

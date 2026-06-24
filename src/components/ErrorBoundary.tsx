@@ -26,7 +26,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
       error,
       errorInfo
     });
-    console.error("Uncaught error:", error?.message || String(error));
+    console.error("Uncaught error:", error, errorInfo);
   }
 
   public render() {
