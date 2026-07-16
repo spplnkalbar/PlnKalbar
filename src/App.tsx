@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, ArrowLeft, Clock, Share2, Zap, Flag, Globe, Camera, X, MapPin, Mail, Phone } from 'lucide-react';
-import { plnArticles, nasionalArticles, internasionalArticles, activityPhotos } from './data';
+import Papa from 'papaparse';
+import { plnArticles as initialPlnArticles, nasionalArticles, internasionalArticles, activityPhotos } from './data';
 import type { Article, ActivityPhoto } from './data';
 
 export default function App() {
@@ -11,6 +12,53 @@ export default function App() {
   const [isPhotoGalleryOpen, setIsPhotoGalleryOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<ActivityPhoto | null>(null);
+  
+  const [plnArticles, setPlnArticles] = useState<Article[]>(initialPlnArticles);
+
+  useEffect(() => {
+    const csvUrl = 'https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=212834116';
+    fetch(csvUrl)
+      .then(res => res.text())
+      .then(csvText => {
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const parsedArticles: Article[] = results.data.map((row: any, index: number) => {
+              let imageUrl = row['UPLOAD FOTO DALAM BENTUK JPG'] || '';
+              if (imageUrl.includes('drive.google.com/open?id=')) {
+                const id = imageUrl.split('id=')[1];
+                imageUrl = `https://lh3.googleusercontent.com/d/${id}=w1000`;
+              } else if (imageUrl.includes('drive.google.com/file/d/')) {
+                const id = imageUrl.split('/d/')[1].split('/')[0];
+                imageUrl = `https://lh3.googleusercontent.com/d/${id}=w1000`;
+              } else if (imageUrl.includes('drive.google.com/uc?export=view&id=')) {
+                const id = imageUrl.split('id=')[1];
+                imageUrl = `https://lh3.googleusercontent.com/d/${id}=w1000`;
+              }
+
+              return {
+                id: `sheet-pln-${index}`,
+                title: row['JUDUL BERITA'] || '',
+                excerpt: row['SUB BERITA/LEAD BERITA'] || '',
+                content: row['ISI BERITA'] || '',
+                author: row['INFORMASI PENULIS'] || '',
+                date: `${row['TANGGAL BERITA'] || ''} • ${row['WAKTU UPLOAD BERITA'] || ''}`,
+                category: "SP PLN Kalimantan Barat",
+                imageUrl: imageUrl,
+                readTime: "3 Min Read"
+              };
+            });
+            
+            const validArticles = parsedArticles.filter(a => a.title.trim() !== '');
+            if (validArticles.length > 0) {
+              setPlnArticles(validArticles);
+            }
+          }
+        });
+      })
+      .catch(err => console.error('Error fetching CSV data:', err));
+  }, []);
 
 
   useEffect(() => {
