@@ -322,6 +322,7 @@ export default function App() {
                           src={featuredArticle.imageUrl}
                           alt={featuredArticle.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                          referrerPolicy="no-referrer"
                         />
                         <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
                         <div className="absolute top-4 left-4 z-10">
@@ -381,6 +382,7 @@ export default function App() {
                             src={article.imageUrl}
                             alt={article.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                            referrerPolicy="no-referrer"
                           />
                           <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
                         </div>
@@ -525,6 +527,7 @@ export default function App() {
                     src={selectedArticle.imageUrl}
                     alt={selectedArticle.title}
                     className="w-full h-full object-cover absolute inset-0"
+                    referrerPolicy="no-referrer"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-stone-100 via-transparent to-black/20" />
                   
