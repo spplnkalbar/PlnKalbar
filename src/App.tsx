@@ -1,23 +1,94 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, ArrowLeft, Clock, Share2, Zap, Flag, Globe, Camera, X, MapPin, Mail, Phone } from 'lucide-react';
+import {
+  Menu, ArrowLeft, Clock, Share2, Camera, X, MapPin, Mail, Phone,
+  ZoomIn, ChevronLeft, ChevronRight, Download, Maximize2, Check, ExternalLink, Sparkles
+} from 'lucide-react';
 import Papa from 'papaparse';
-import { plnArticles as initialPlnArticles, nasionalArticles, internasionalArticles, activityPhotos } from './data';
+import { plnArticles as initialPlnArticles, nasionalArticles as initialNasionalArticles, activityPhotos as initialActivityPhotos } from './data';
 import type { Article, ActivityPhoto } from './data';
+
+// Helper to convert any Google Drive URL format into direct high-resolution image stream
+function formatDriveImageUrl(rawUrl: string | undefined | null): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+
+  // 1. Google Drive file URL format: /file/d/FILE_ID/...
+  const fileDMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (fileDMatch && fileDMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${fileDMatch[1]}=w1600`;
+  }
+
+  // 2. Google Drive parameter URL: ?id=FILE_ID or &id=FILE_ID
+  const idParamMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+  if (idParamMatch && idParamMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${idParamMatch[1]}=w1600`;
+  }
+
+  // 3. lh3 direct URL: lh3.googleusercontent.com/d/FILE_ID
+  const lh3Match = trimmed.match(/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/i);
+  if (lh3Match && lh3Match[1]) {
+    return `https://lh3.googleusercontent.com/d/${lh3Match[1]}=w1600`;
+  }
+
+  // 4. Raw Google Drive file ID
+  if (/^[a-zA-Z0-9_-]{25,45}$/.test(trimmed)) {
+    return `https://lh3.googleusercontent.com/d/${trimmed}=w1600`;
+  }
+
+  return trimmed;
+}
+
+// Helper to find column values flexibly even if headers change slightly
+function getRowField(row: Record<string, any>, keywords: string[]): string {
+  if (!row || typeof row !== 'object') return '';
+  const keys = Object.keys(row);
+  for (const kw of keywords) {
+    const key = keys.find(k => k.trim().toLowerCase() === kw.toLowerCase());
+    if (key && row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+      return String(row[key]).trim();
+    }
+  }
+  for (const kw of keywords) {
+    const key = keys.find(k => k.toLowerCase().includes(kw.toLowerCase()));
+    if (key && row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+      return String(row[key]).trim();
+    }
+  }
+  return '';
+}
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [activeTab, setActiveTab] = useState<'pln' | 'nasional' | 'internasional'>('pln');
+  const [activeTab, setActiveTab] = useState<'pln' | 'nasional'>('pln');
   const [isPhotoGalleryOpen, setIsPhotoGalleryOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<ActivityPhoto | null>(null);
   
   const [plnArticles, setPlnArticles] = useState<Article[]>(initialPlnArticles);
+  const [nasionalArticles, setNasionalArticles] = useState<Article[]>(initialNasionalArticles);
+  const [photos, setPhotos] = useState<ActivityPhoto[]>(initialActivityPhotos);
+  const [isLoadingNews, setIsLoadingNews] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const csvUrl = 'https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=212834116';
-    fetch(csvUrl)
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 3000);
+  }, []);
+
+  const fetchSpreadsheetNews = useCallback(() => {
+    const timestamp = Date.now();
+    const plnCsvUrl = `https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=212834116&_t=${timestamp}`;
+    const nasionalCsvUrl = `https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=1747603770&_t=${timestamp}`;
+    const photoCsvUrl = `https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=1919240054&_t=${timestamp}`;
+
+    setIsLoadingNews(true);
+
+    const fetchPln = fetch(plnCsvUrl)
       .then(res => res.text())
       .then(csvText => {
         Papa.parse(csvText, {
@@ -25,40 +96,190 @@ export default function App() {
           skipEmptyLines: true,
           complete: (results) => {
             const parsedArticles: Article[] = results.data.map((row: any, index: number) => {
-              let imageUrl = row['UPLOAD FOTO DALAM BENTUK JPG'] || '';
-              if (imageUrl.includes('drive.google.com/open?id=')) {
-                const id = imageUrl.split('id=')[1];
-                imageUrl = `https://lh3.googleusercontent.com/d/${id}=w1000`;
-              } else if (imageUrl.includes('drive.google.com/file/d/')) {
-                const id = imageUrl.split('/d/')[1].split('/')[0];
-                imageUrl = `https://lh3.googleusercontent.com/d/${id}=w1000`;
-              } else if (imageUrl.includes('drive.google.com/uc?export=view&id=')) {
-                const id = imageUrl.split('id=')[1];
-                imageUrl = `https://lh3.googleusercontent.com/d/${id}=w1000`;
-              }
+              const rawImage = getRowField(row, [
+                'link foto dalam bentuk jpg',
+                'upload foto dalam bentuk jpg',
+                'link foto',
+                'upload foto',
+                'foto',
+                'gambar',
+                'image',
+                'jpg',
+                'png',
+                'drive',
+                'photo'
+              ]);
+              const imageUrl = formatDriveImageUrl(rawImage);
+
+              const title = getRowField(row, ['judul berita', 'judul', 'title', 'berita']);
+              const excerpt = getRowField(row, ['sub berita/lead berita', 'sub berita', 'lead berita', 'sub', 'lead', 'ringkasan', 'excerpt']);
+              const content = getRowField(row, ['isi berita', 'isi', 'konten', 'content', 'body']);
+              const author = getRowField(row, ['informasi penulis', 'penulis', 'author', 'reporter', 'oleh']) || 'Humas SP PLN Kalbar';
+              const dateVal = getRowField(row, ['tanggal berita', 'tanggal', 'date']);
+              const timeVal = getRowField(row, ['waktu upload berita', 'waktu upload', 'waktu', 'time', 'jam']);
+              const formattedDate = dateVal && timeVal ? `${dateVal} • ${timeVal}` : dateVal || timeVal || 'Hari ini';
+
+              const words = `${title} ${excerpt} ${content}`.trim().split(/\s+/).length;
+              const readMinutes = Math.max(1, Math.ceil(words / 150));
 
               return {
                 id: `sheet-pln-${index}`,
-                title: row['JUDUL BERITA'] || '',
-                excerpt: row['SUB BERITA/LEAD BERITA'] || '',
-                content: row['ISI BERITA'] || '',
-                author: row['INFORMASI PENULIS'] || '',
-                date: `${row['TANGGAL BERITA'] || ''} • ${row['WAKTU UPLOAD BERITA'] || ''}`,
+                title: title,
+                excerpt: excerpt || (content ? content.slice(0, 160) + '...' : ''),
+                content: content || excerpt,
+                author: author.trim(),
+                date: formattedDate,
                 category: "SP PLN Kalimantan Barat",
-                imageUrl: imageUrl,
-                readTime: "3 Min Read"
+                imageUrl: imageUrl || "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600",
+                readTime: `${readMinutes} Min Read`
               };
             });
             
             const validArticles = parsedArticles.filter(a => a.title.trim() !== '');
-            if (validArticles.length > 0) {
-              setPlnArticles(validArticles);
-            }
+            // Postingan terbaru berada pada baris bawah spreadsheet.
+            // Membalik urutan (reverse) memastikan baris paling bawah yang baru ditambahkan
+            // otomatis menjadi Berita Utama / postingan terdepan.
+            const sortedArticles = [...validArticles].reverse();
+            setPlnArticles(sortedArticles);
           }
         });
       })
-      .catch(err => console.error('Error fetching CSV data:', err));
+      .catch(() => {});
+
+    const fetchNasional = fetch(nasionalCsvUrl)
+      .then(res => res.text())
+      .then(csvText => {
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const parsedArticles: Article[] = results.data.map((row: any, index: number) => {
+              const rawImage = getRowField(row, [
+                'link foto dalam bentuk jpg',
+                'upload foto dalam bentuk jpg',
+                'link foto',
+                'upload foto',
+                'foto',
+                'gambar',
+                'image',
+                'jpg',
+                'png',
+                'drive',
+                'photo'
+              ]);
+              const imageUrl = formatDriveImageUrl(rawImage);
+
+              const title = getRowField(row, ['judul berita', 'judul', 'title', 'berita']);
+              const excerpt = getRowField(row, ['sub berita/lead berita', 'sub berita', 'lead berita', 'sub', 'lead', 'ringkasan', 'excerpt']);
+              const content = getRowField(row, ['isi berita', 'isi', 'konten', 'content', 'body']);
+              const author = getRowField(row, ['informasi penulis', 'penulis', 'author', 'reporter', 'oleh']) || 'Redaksi Nasional';
+              const dateVal = getRowField(row, ['tanggal berita', 'tanggal', 'date']);
+              const timeVal = getRowField(row, ['waktu upload berita', 'waktu upload', 'waktu', 'time', 'jam']);
+              const formattedDate = dateVal && timeVal ? `${dateVal} • ${timeVal}` : dateVal || timeVal || 'Hari ini';
+
+              const words = `${title} ${excerpt} ${content}`.trim().split(/\s+/).length;
+              const readMinutes = Math.max(1, Math.ceil(words / 150));
+
+              return {
+                id: `sheet-nasional-${index}`,
+                title: title,
+                excerpt: excerpt || (content ? content.slice(0, 160) + '...' : ''),
+                content: content || excerpt,
+                author: author.trim(),
+                date: formattedDate,
+                category: "Berita Nasional",
+                imageUrl: imageUrl || "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600",
+                readTime: `${readMinutes} Min Read`
+              };
+            });
+            
+            const validArticles = parsedArticles.filter(a => a.title.trim() !== '');
+            // Baris bawah yang baru ditambahkan di tab BERITA NASIONAL otomatis menjadi postingan terdepan
+            const sortedArticles = [...validArticles].reverse();
+            setNasionalArticles(sortedArticles);
+          }
+        });
+      })
+      .catch(() => {});
+
+    const fetchPhotos = fetch(photoCsvUrl)
+      .then(res => res.text())
+      .then(csvText => {
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const parsedPhotos: ActivityPhoto[] = results.data.map((row: any, index: number) => {
+              const rawImage = getRowField(row, [
+                'link foto dalam bentuk jpg',
+                'upload foto dalam bentuk jpg',
+                'link foto',
+                'upload foto',
+                'foto',
+                'gambar',
+                'image',
+                'jpg',
+                'png',
+                'drive',
+                'photo',
+                'link'
+              ]);
+              const imageUrl = formatDriveImageUrl(rawImage);
+              const rawCaption = getRowField(row, [
+                'keterangan foto',
+                'keterangan',
+                'caption',
+                'deskripsi',
+                'description',
+                'isi',
+                'detail'
+              ]);
+              const explicitTitle = getRowField(row, ['judul foto', 'judul', 'title', 'nama kegiatan']);
+              const explicitDate = getRowField(row, ['tanggal kegiatan', 'tanggal foto', 'tanggal', 'date', 'waktu']);
+              const explicitLoc = getRowField(row, ['lokasi kegiatan', 'lokasi foto', 'lokasi', 'tempat', 'location']);
+
+              // Extract clean headline from caption if no explicit title
+              let derivedTitle = explicitTitle;
+              if (!derivedTitle && rawCaption) {
+                const firstSentence = rawCaption.split(/[.\n—–-]/)[0]?.trim();
+                if (firstSentence && firstSentence.length >= 8 && firstSentence.length <= 85) {
+                  derivedTitle = firstSentence;
+                } else if (rawCaption.length <= 80) {
+                  derivedTitle = rawCaption;
+                } else {
+                  derivedTitle = rawCaption.slice(0, 75).trim() + '...';
+                }
+              }
+
+              return {
+                id: `sheet-foto-${index}`,
+                title: derivedTitle || `Dokumentasi Kegiatan ${index + 1}`,
+                description: rawCaption || 'Dokumentasi resmi kegiatan Serikat Pekerja PLN UID Kalimantan Barat.',
+                date: explicitDate || 'Dokumentasi Kegiatan',
+                imageUrl: imageUrl,
+                location: explicitLoc || 'Kalimantan Barat'
+              };
+            });
+
+            const validPhotos = parsedPhotos.filter(p => p.imageUrl && p.imageUrl.trim() !== '' && !p.imageUrl.includes('undefined'));
+            // Baris bawah yang baru ditambahkan di tab FOTO KEGIATAN otomatis menjadi dokumentasi terdepan
+            const sortedPhotos = [...validPhotos].reverse();
+            setPhotos(sortedPhotos);
+          }
+        });
+      })
+      .catch(() => {});
+
+    Promise.allSettled([fetchPln, fetchNasional, fetchPhotos])
+      .finally(() => setIsLoadingNews(false));
   }, []);
+
+  useEffect(() => {
+    fetchSpreadsheetNews();
+    // Auto-refresh data every 20 seconds for live sync
+    const interval = setInterval(fetchSpreadsheetNews, 20000);
+    return () => clearInterval(interval);
+  }, [fetchSpreadsheetNews]);
 
 
   useEffect(() => {
@@ -69,21 +290,160 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const currentPhotoIndex = selectedPhoto ? photos.findIndex(p => p.id === selectedPhoto.id) : -1;
+
+  const handlePrevPhoto = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (photos.length === 0) return;
+    const prevIdx = currentPhotoIndex > 0 ? currentPhotoIndex - 1 : photos.length - 1;
+    setSelectedPhoto(photos[prevIdx]);
+  }, [currentPhotoIndex, photos]);
+
+  const handleNextPhoto = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (photos.length === 0) return;
+    const nextIdx = currentPhotoIndex < photos.length - 1 ? currentPhotoIndex + 1 : 0;
+    setSelectedPhoto(photos[nextIdx]);
+  }, [currentPhotoIndex, photos]);
+
+  const copyTextToClipboard = async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fallback
+    }
+
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return successful;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCloseArticle = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedId(null);
+    if (window.location.hash.startsWith('#article-')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  };
+
+  const handleShareArticle = async (article: Article, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const shareUrl = `${origin}${pathname}#article-${article.id}`;
+    const shareTitle = article.title;
+    const shareText = `${article.title} - Warta SP PLN UID Kalimantan Barat`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    const copied = await copyTextToClipboard(`${shareTitle}\n\n${shareUrl}`);
+    if (copied) {
+      showToast('Tautan berita berhasil disalin ke papan klip!');
+    } else {
+      showToast('Gagal menyalin tautan berita.');
+    }
+  };
+
+  const handleSharePhoto = async (photo: ActivityPhoto, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: photo.title,
+          text: photo.description,
+          url: photo.imageUrl,
+        });
+        return;
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    const copied = await copyTextToClipboard(photo.imageUrl);
+    if (copied) {
+      showToast('Tautan foto berhasil disalin ke papan klip!');
+    } else {
+      showToast('Gagal menyalin tautan foto.');
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedPhoto) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') handlePrevPhoto();
+      if (e.key === 'ArrowRight') handleNextPhoto();
+      if (e.key === 'Escape') setSelectedPhoto(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPhoto, handlePrevPhoto, handleNextPhoto]);
+
   const currentArticles = activeTab === 'pln' 
     ? plnArticles 
-    : activeTab === 'nasional' 
-      ? nasionalArticles 
-      : internasionalArticles;
+    : nasionalArticles;
 
   const featuredArticle = currentArticles[0];
   const additionalArticles = currentArticles.slice(1);
 
-  const allArticles = [...plnArticles, ...nasionalArticles, ...internasionalArticles];
+  const allArticles = [...plnArticles, ...nasionalArticles];
   const selectedArticle = allArticles.find((a) => a.id === selectedId);
 
-  // When an article/gallery/profile is selected, disable background scrolling
+  // Support deep-linking via #article-{id}
   useEffect(() => {
-    if (selectedId || isPhotoGalleryOpen || isProfileOpen || selectedPhoto) {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#article-')) {
+        const id = hash.replace('#article-', '');
+        setSelectedId(id);
+        if (nasionalArticles.some((a) => a.id === id)) {
+          setActiveTab('nasional');
+        } else if (plnArticles.some((a) => a.id === id)) {
+          setActiveTab('pln');
+        }
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [plnArticles, nasionalArticles]);
+
+  // When an article/profile/photo lightbox modal is selected, disable background scrolling
+  useEffect(() => {
+    if (selectedId || isProfileOpen || selectedPhoto) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -91,7 +451,7 @@ export default function App() {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [selectedId, isPhotoGalleryOpen, isProfileOpen, selectedPhoto]);
+  }, [selectedId, isProfileOpen, selectedPhoto]);
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-stone-900 selection:bg-red-600 selection:text-white relative z-0">
@@ -113,14 +473,19 @@ export default function App() {
 
       {/* Navigation */}
       <motion.header
-        className={`fixed top-0 inset-x-0 z-40 transition-all duration-300 border-b border-[#860120] flex flex-col justify-center bg-gradient-to-b ${
-          isScrolled ? 'from-[#860120]/95 to-[#5a0015]/95 backdrop-blur-md shadow-md h-[72px] md:h-[88px]' : 'from-[#860120]/90 to-[#5a0015]/90 backdrop-blur-md h-[88px] md:h-[110px]'
+        className={`fixed top-0 inset-x-0 z-40 transition-all duration-300 border-none flex flex-col justify-center ${
+          isScrolled ? 'h-[76px] md:h-[88px]' : 'h-[92px] md:h-[110px]'
         }`}
+        style={{
+          background: 'linear-gradient(180deg, #860120 0%, #860120 68%, #ffffff 100%)',
+          border: 'none',
+          boxShadow: 'none',
+        }}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       >
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between text-white select-none w-full">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between text-white select-none w-full relative z-10">
           <div 
             onClick={() => {
               setSelectedId(null);
@@ -128,12 +493,12 @@ export default function App() {
               setIsProfileOpen(false);
               setSelectedPhoto(null);
             }}
-            className="flex items-center gap-3 cursor-pointer shrink-0"
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0"
           >
             <img 
               src="https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000" 
               alt="Logo SP PLN" 
-              className={`object-contain hover:scale-105 transition-all duration-300 ${isScrolled ? 'w-[50px] h-[58px] md:w-[70px] md:h-[78px]' : 'w-[60px] h-[68px] md:w-[88px] md:h-[98px]'}`} 
+              className="object-contain hover:scale-105 transition-all duration-300 drop-shadow-sm h-[52px] w-[50px] sm:h-[64px] sm:w-[61px] md:h-[74px] md:w-[71px] mb-3 sm:mb-5 md:mb-[27px]" 
               referrerPolicy="no-referrer"
             />
           </div>
@@ -144,18 +509,18 @@ export default function App() {
               setIsProfileOpen(false);
               setSelectedPhoto(null);
             }}
-            className="font-serif text-lg sm:text-2xl lg:text-3.5xl font-bold tracking-wide drop-shadow-md text-center px-2 sm:px-4 cursor-pointer hover:opacity-90 transition-opacity flex-1"
+            className="font-serif font-bold tracking-tight sm:tracking-normal md:tracking-wide drop-shadow-md text-center cursor-pointer hover:opacity-90 transition-all flex-1 leading-tight sm:leading-snug text-base sm:text-2xl md:text-3xl lg:text-[34px] px-2 sm:px-4 pb-3 sm:pb-5 md:pb-[29px]"
           >
             Berita SP PLN Kalimantan Barat
           </div>
-          <div className={`shrink-0 transition-all duration-300 ${isScrolled ? 'w-[50px] md:w-[70px]' : 'w-[60px] md:w-[88px]'}`} /> {/* Spacer for centering */}
+          <div className="shrink-0 transition-all duration-300 w-[50px] sm:w-[61px] md:w-[71px]" /> {/* Spacer for centering */}
         </div>
       </motion.header>
 
       {/* Sub Navigation */}
       <motion.div 
-        className={`fixed inset-x-0 z-30 transition-all duration-300 bg-white/50 backdrop-blur-md shadow-sm border-b border-stone-200/50 py-3 ${
-          isScrolled ? 'top-[72px] md:top-[88px]' : 'top-[88px] md:top-[110px]'
+        className={`fixed inset-x-0 z-30 transition-all duration-300 py-3 bg-white border-none shadow-none ${
+          isScrolled ? 'top-[76px] md:top-[88px]' : 'top-[92px] md:top-[110px]'
         }`}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
@@ -168,10 +533,10 @@ export default function App() {
               setIsProfileOpen(false);
               setIsPhotoGalleryOpen(false);
             }}
-            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer ${
+            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
               !isProfileOpen && !isPhotoGalleryOpen && !selectedId
                 ? 'bg-red-700 text-white shadow-md' 
-                : 'bg-white/70 text-stone-700 hover:bg-white/90'
+                : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200/80'
             }`}
           >
             Edisi Hari Ini
@@ -182,10 +547,10 @@ export default function App() {
               setIsPhotoGalleryOpen(false);
               setSelectedId(null);
             }}
-            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer ${
+            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
               isProfileOpen 
                 ? 'bg-red-700 text-white shadow-md' 
-                : 'bg-white/70 text-stone-700 hover:bg-white/90'
+                : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200/80'
             }`}
           >
             Profil SP PLN Kalbar
@@ -196,10 +561,10 @@ export default function App() {
               setIsProfileOpen(false);
               setSelectedId(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
               isPhotoGalleryOpen 
                 ? 'bg-red-700 text-white shadow-md' 
-                : 'bg-white/70 text-stone-700 hover:bg-white/90'
+                : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200/80'
             }`}
           >
             <Camera size={14} className={isPhotoGalleryOpen ? "text-white" : "text-stone-500"} />
@@ -219,69 +584,189 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5, ease: 'easeOut' }}
             >
-              <div className="mb-6 flex items-center justify-between border-b border-stone-300/70 pb-4">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 shadow-sm">
-                    <Camera size={28} className="animate-pulse" />
-                  </div>
+              {/* Back to news button & Navigation Crumb */}
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                <button
+                  onClick={() => setIsPhotoGalleryOpen(false)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/85 hover:bg-white text-stone-700 hover:text-red-700 text-sm font-semibold border border-stone-200/80 shadow-2xs transition-all duration-200 cursor-pointer"
+                >
+                  <ArrowLeft size={16} />
+                  <span>Kembali ke Edisi Berita</span>
+                </button>
+              </div>
+
+              {/* Header Title Section */}
+              <div className="mb-8 pb-6 border-b border-stone-200/80">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                   <div>
                     <h1 className="font-serif text-3xl md:text-5xl font-black text-stone-900 leading-tight">
-                      Galeri Foto Kegiatan
+                      Dokumentasi & Foto Kegiatan
                     </h1>
-                    <p className="text-sm text-stone-500 font-sans font-medium uppercase tracking-wider mt-1">
-                      SP PLN UID Kalimantan Barat
-                    </p>
                   </div>
                 </div>
               </div>
 
-              {activityPhotos.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pt-6">
-                  {activityPhotos.map((photo) => (
+              {/* Spotlight Featured Photo (Hero Banner) */}
+              {photos.length > 0 && (
+                <div className="mb-12">
+                  <div
+                    onClick={() => setSelectedPhoto(photos[0])}
+                    className="relative group cursor-pointer overflow-hidden rounded-3xl border border-stone-200/80 shadow-[0_12px_40px_rgba(0,0,0,0.08)] hover:shadow-[0_24px_50px_rgba(134,1,32,0.16)] transition-all duration-500 bg-stone-900"
+                  >
+                    <div className="relative aspect-[16/9] md:aspect-[21/9] w-full overflow-hidden">
+                      <img
+                        src={photos[0].imageUrl}
+                        alt={photos[0].title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.src.includes('1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M')) {
+                            target.src = "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600";
+                          }
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/45 to-transparent" />
+                      
+                      {/* Spotlight Floating Content */}
+                      <div className="absolute inset-x-0 bottom-0 p-6 md:p-10 flex flex-col justify-end">
+                        <div className="flex flex-wrap items-center gap-3 text-xs font-bold uppercase tracking-wider text-amber-300 mb-2.5">
+                          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-700 text-white font-sans text-xs shadow-sm">
+                            <Sparkles size={13} />
+                            Dokumentasi Terkini
+                          </span>
+                          <span className="text-white/80 font-sans hidden sm:inline">
+                            {photos[0].date} &middot; {photos[0].location}
+                          </span>
+                        </div>
+                        <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold text-white leading-tight mb-3 drop-shadow-md group-hover:text-red-300 transition-colors duration-300">
+                          {photos[0].title}
+                        </h2>
+                        <p className="text-sm md:text-base text-stone-200 line-clamp-2 md:line-clamp-3 max-w-4xl font-sans leading-relaxed drop-shadow-sm mb-5">
+                          {photos[0].description}
+                        </p>
+                        <div className="flex items-center gap-4">
+                          <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white bg-white/20 hover:bg-white/30 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/30 transition-all shadow-sm">
+                            <ZoomIn size={16} />
+                            Lihat Foto Resolusi Penuh & Keterangan
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Photo Showcase Content */}
+              {photos.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 sm:gap-10 lg:gap-12">
+                  {photos.map((photo, index) => (
                     <div
                       key={photo.id}
                       onClick={() => setSelectedPhoto(photo)}
-                      className="group bg-white/75 backdrop-blur-md rounded-3xl overflow-hidden border border-stone-200/50 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] transition-all duration-500 cursor-pointer flex flex-col active:scale-[0.98] transform hover:-translate-y-2"
+                      className="group bg-white rounded-[2rem] p-5 border border-stone-200/90 shadow-[0_12px_36px_rgba(0,0,0,0.07)] hover:shadow-[0_24px_50px_rgba(134,1,32,0.15)] ring-1 ring-stone-900/5 hover:border-red-300 transition-all duration-300 cursor-pointer flex flex-col active:scale-[0.99] transform hover:-translate-y-2 relative"
                     >
-                      <div className="relative aspect-[4/3] overflow-hidden bg-stone-100 shadow-inner">
+                      {/* Image Frame with Inner Inset & Rounded Border */}
+                      <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-stone-100 border border-stone-100 shadow-inner mb-5">
                         <img
                           src={photo.imageUrl}
                           alt={photo.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.src.includes('1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M')) {
+                              target.src = "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600";
+                            }
+                          }}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        <span className="absolute bottom-4 left-4 bg-black/75 backdrop-blur-md text-xs font-bold text-white px-3 py-1.5 rounded-full border border-white/10 shadow-sm">
-                          {photo.date}
-                        </span>
+                        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/75 via-stone-950/15 to-transparent opacity-65 group-hover:opacity-85 transition-opacity duration-300" />
+                        
+                        {/* Photo Number Tag */}
+                        <div className="absolute top-3 left-3">
+                          <span className="px-2.5 py-1 bg-black/60 backdrop-blur-md text-[11px] font-bold text-white rounded-lg border border-white/15">
+                            Dokumentasi #{index + 1}
+                          </span>
+                        </div>
+
+                        {/* Top Right Actions: Quick Share & Zoom Badge */}
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                          <button
+                            type="button"
+                            onClick={(e) => handleSharePhoto(photo, e)}
+                            className="p-2 bg-black/60 hover:bg-red-700 text-white rounded-xl backdrop-blur-md border border-white/20 shadow-md transition-all cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95"
+                            title="Bagikan foto kegiatan ini"
+                            aria-label="Bagikan foto"
+                          >
+                            <Share2 size={13} />
+                          </button>
+                          <span className="p-2 bg-white/90 text-stone-900 rounded-xl shadow-md hidden group-hover:flex items-center justify-center transition-all">
+                            <ZoomIn size={14} />
+                          </span>
+                        </div>
+
+                        {/* Inset Metadata on Bottom of Image */}
+                        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-xs text-stone-200 font-sans">
+                          <span className="truncate flex items-center gap-1">📍 {photo.location}</span>
+                          <span className="shrink-0 font-medium">{photo.date}</span>
+                        </div>
                       </div>
-                      <div className="p-6 flex-1 flex flex-col justify-between">
+
+                      {/* Content Area */}
+                      <div className="flex-1 flex flex-col justify-between">
                         <div>
-                          <h3 className="font-serif text-xl font-extrabold leading-snug mb-2 text-gray-950 group-hover:text-red-700 transition-colors duration-300">
+                          <div className="flex items-center justify-between gap-2 mb-2.5">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-red-700 bg-red-50 border border-red-200/60 px-2.5 py-0.5 rounded-full">
+                              SP PLN UID Kalbar
+                            </span>
+                            <span className="text-xs text-stone-400 font-medium font-sans">
+                              {photo.date}
+                            </span>
+                          </div>
+                          <h3 className="font-serif text-lg md:text-xl font-bold leading-snug mb-3 text-stone-900 group-hover:text-red-700 transition-colors duration-300">
                             {photo.title}
                           </h3>
-                          <p className="text-xs text-red-700 font-bold uppercase tracking-wider mb-3">
-                            📍 {photo.location}
+                          <p className="text-xs text-stone-500 font-semibold uppercase tracking-wider mb-1.5">
+                            Keterangan:
                           </p>
-                          <p className="text-sm text-stone-600 line-clamp-3 leading-relaxed mb-4 font-medium">
+                          <p className="text-sm text-stone-600 line-clamp-3 leading-relaxed font-sans font-normal mb-5">
                             {photo.description}
                           </p>
                         </div>
-                        <span className="text-xs font-black text-red-700 hover:text-red-800 inline-flex items-center gap-1.5 uppercase tracking-wide">
-                          Lihat Detail Foto &rarr;
-                        </span>
+                        
+                        <div className="pt-4 border-t border-stone-100 flex items-center justify-between mt-auto">
+                          <button
+                            type="button"
+                            onClick={(e) => handleSharePhoto(photo, e)}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-red-700 transition-colors cursor-pointer"
+                          >
+                            <Share2 size={13} />
+                            <span>Bagikan</span>
+                          </button>
+                          <span className="text-xs font-bold text-red-700 group-hover:text-red-800 inline-flex items-center gap-1">
+                            Buka Foto & Detail &rarr;
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-28 bg-white/50 backdrop-blur-md rounded-[2rem] border border-stone-200/50 border-dashed text-center mt-8">
-                  <div className="w-20 h-20 mb-6 bg-white border border-stone-200/80 rounded-full flex items-center justify-center text-stone-400 shadow-sm">
-                    <Camera size={36} />
+                /* Empty State */
+                <div className="flex flex-col items-center justify-center py-24 bg-white/70 backdrop-blur-md rounded-3xl border border-stone-200/90 shadow-sm border-dashed text-center mt-6 px-6">
+                  <div className="w-16 h-16 mb-4 bg-red-50 text-red-700 border border-red-200/80 rounded-2xl flex items-center justify-center shadow-xs">
+                    <Camera size={30} />
                   </div>
-                  <h3 className="font-serif text-3xl font-black text-stone-800 mb-3">Belum Ada Foto</h3>
-                  <p className="text-stone-500 max-w-md text-lg leading-relaxed">
-                    Saat ini belum ada dokumentasi kegiatan yang diunggah. Silakan kembali lagi nanti.
+                  <h3 className="font-serif text-2xl font-black text-stone-900 mb-2">
+                    Belum Ada Dokumentasi Kegiatan
+                  </h3>
+                  <p className="text-stone-600 max-w-lg text-sm leading-relaxed mb-4">
+                    Data foto kegiatan disinkronkan langsung dari tab "FOTO KEGIATAN" di Google Spreadsheet. Dokumentasi foto baru akan langsung otomatis tampil saat baris baru ditambahkan.
                   </p>
+                  <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Sinkronisasi Aktif dengan Spreadsheet
+                  </span>
                 </div>
               )}
             </motion.div>
@@ -297,7 +782,7 @@ export default function App() {
                 <h1 className="font-serif text-4xl md:text-5xl lg:text-7xl font-bold text-stone-900 animate-fade-in">
                   Edisi Hari Ini
                 </h1>
-                <div className="hidden md:block text-sm font-medium text-stone-500 uppercase tracking-widest">
+                <div className="text-sm font-medium text-stone-500 uppercase tracking-widest">
                   {new Date().toLocaleDateString('id-ID', {
                     weekday: 'long',
                     year: 'numeric',
@@ -309,13 +794,13 @@ export default function App() {
 
               {/* Tab Pages / Categories Selector */}
               <div
-                className="mb-12 flex items-center overflow-x-auto no-scrollbar -mx-6 px-6 sm:mx-0 sm:px-0 py-1 gap-3 scroll-smooth select-none"
+                className="mb-8 flex items-center overflow-x-auto no-scrollbar -mx-6 px-6 sm:mx-0 sm:px-0 py-1 gap-3 scroll-smooth select-none"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
                 <button
                   id="tab-pln"
                   onClick={() => setActiveTab('pln')}
-                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
+                  className={`flex items-center px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
                     activeTab === 'pln'
                       ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
                       : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
@@ -327,25 +812,13 @@ export default function App() {
                 <button
                   id="tab-nasional"
                   onClick={() => setActiveTab('nasional')}
-                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
+                  className={`flex items-center px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
                     activeTab === 'nasional'
                       ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
                       : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
                   }`}
                 >
                   <span>Berita Nasional</span>
-                </button>
-
-                <button
-                  id="tab-internasional"
-                  onClick={() => setActiveTab('internasional')}
-                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full text-sm font-bold tracking-wide transition-all duration-300 md:hover:-translate-y-0.5 pointer-events-auto shrink-0 shadow-[0_4px_12px_rgba(0,0,0,0.06)] border cursor-pointer ${
-                    activeTab === 'internasional'
-                      ? 'bg-[#860120] text-white border-[#860120] shadow-md shadow-[#860120]/20 font-black'
-                      : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
-                  }`}
-                >
-                  <span>Berita Internasional</span>
                 </button>
               </div>
 
@@ -357,11 +830,26 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
               >
+                {/* Active Category Header Banner */}
+                <div className="mb-8 pb-3 border-b border-stone-200/80">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <h2 className="font-serif text-2xl md:text-3xl font-black text-stone-900 tracking-tight">
+                        {activeTab === 'pln' && 'Berita SP PLN Kalimantan Barat'}
+                        {activeTab === 'nasional' && 'Berita Nasional'}
+                      </h2>
+                      <p className="text-xs text-stone-500 font-medium">
+                        {activeTab === 'pln' && 'Liputan kegiatan, advokasi, dan sinergi ketenagakerjaan UID Kalimantan Barat'}
+                        {activeTab === 'nasional' && 'Sorotan kedaulatan energi, RUPTL, dan kebijakan ketenagalistrikan nasional'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 {featuredArticle ? (
                   <div className="mb-16">
                     <motion.div
                       layoutId={`card-container-${featuredArticle.id}`}
-                      className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/75 backdrop-blur-md rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] border border-stone-200/50 transition-all duration-500 hover:-translate-y-2"
+                      className="group cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-8 items-center bg-white/75 backdrop-blur-md rounded-[2rem] p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_rgba(134,1,32,0.12)] border border-stone-200/50 transition-all duration-500 hover:-translate-y-2 relative"
                       onClick={() => setSelectedId(featuredArticle.id)}
                     >
                       <div className="lg:col-span-8 overflow-hidden rounded-3xl relative aspect-[16/10] shadow-inner font-sans">
@@ -371,6 +859,13 @@ export default function App() {
                           alt={featuredArticle.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                           referrerPolicy="no-referrer"
+                          loading="eager"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.src.includes('1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M')) {
+                              target.src = "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000";
+                            }
+                          }}
                         />
                         <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
                         <div className="absolute top-4 left-4 z-10">
@@ -378,13 +873,37 @@ export default function App() {
                             {featuredArticle.category}
                           </span>
                         </div>
+                        {/* Share Button on Featured Article Image */}
+                        <div className="absolute top-4 right-4 z-10">
+                          <button
+                            type="button"
+                            onClick={(e) => handleShareArticle(featuredArticle, e)}
+                            className="p-2.5 rounded-full bg-black/60 hover:bg-red-700 text-white backdrop-blur-md border border-white/20 transition-all shadow-md cursor-pointer flex items-center justify-center hover:scale-110 active:scale-95"
+                            title="Bagikan berita ini"
+                            aria-label="Bagikan berita"
+                          >
+                            <Share2 size={16} />
+                          </button>
+                        </div>
                       </div>
                       <div className="lg:col-span-4 flex flex-col justify-center px-4 sm:px-2 font-sans">
-                        <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-stone-800 mb-5 font-semibold">
-                          <span className="text-red-700 font-extrabold">{featuredArticle.author}</span>
-                          <span className="text-stone-400">&bull;</span>
-                          <span className="flex items-center text-stone-900"><Clock size={16} className="mr-1.5 opacity-80" /> {featuredArticle.readTime}</span>
-                        </motion.div>
+                        <div className="flex items-center justify-between gap-2 mb-5">
+                          <motion.div layoutId={`meta-${featuredArticle.id}`} className="flex items-center space-x-3 text-sm text-stone-800 font-semibold">
+                            <span className="text-red-700 font-extrabold">{featuredArticle.author}</span>
+                            <span className="text-stone-400">&bull;</span>
+                            <span className="flex items-center text-stone-900"><Clock size={16} className="mr-1.5 opacity-80" /> {featuredArticle.readTime}</span>
+                          </motion.div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleShareArticle(featuredArticle, e)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-stone-100/90 hover:bg-red-50 text-stone-700 hover:text-red-700 text-xs font-bold border border-stone-200/80 transition-all cursor-pointer shadow-2xs shrink-0 active:scale-95"
+                            title="Bagikan berita ini"
+                            aria-label="Bagikan berita"
+                          >
+                            <Share2 size={13} />
+                            <span>Bagikan</span>
+                          </button>
+                        </div>
                         <motion.h2
                           layoutId={`title-${featuredArticle.id}`}
                           className="font-serif text-3xl md:text-4xl lg:text-5xl font-black leading-tight mb-5 text-gray-950 group-hover:text-red-700 transition-colors duration-300 drop-shadow-sm"
@@ -401,12 +920,22 @@ export default function App() {
                     </motion.div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-20 bg-white/50 backdrop-blur-md rounded-3xl border border-stone-200 border-dashed text-center">
-                    <div className="w-16 h-16 mb-4 bg-stone-100 rounded-full flex items-center justify-center text-stone-400">
-                      <Menu size={32} />
+                  <div className="flex flex-col items-center justify-center py-24 bg-white/70 backdrop-blur-md rounded-3xl border border-stone-200/90 shadow-sm border-dashed text-center px-6">
+                    <div className="w-16 h-16 mb-4 bg-red-50 text-red-700 border border-red-200/80 rounded-2xl flex items-center justify-center shadow-xs">
+                      <Menu size={28} />
                     </div>
-                    <h3 className="font-serif text-2xl font-bold text-stone-800 mb-2">Belum Ada Berita</h3>
-                    <p className="text-stone-500 max-w-md">Saat ini belum ada artikel yang dipublikasikan pada kategori ini. Silakan kembali lagi nanti.</p>
+                    <h3 className="font-serif text-2xl font-black text-stone-900 mb-2">
+                      {activeTab === 'pln' ? 'Belum Ada Berita SP PLN Kalbar' : 'Belum Ada Berita Nasional'}
+                    </h3>
+                    <p className="text-stone-600 max-w-lg text-sm leading-relaxed mb-4">
+                      {activeTab === 'pln'
+                        ? 'Data berita SP PLN Kalbar disinkronkan langsung dari sheet "BERITA SP PLN KALBAR" pada Google Spreadsheet.'
+                        : 'Data berita nasional disinkronkan langsung dari sheet "BERITA NASIONAL" pada Google Spreadsheet. Berita baru akan langsung tampil otomatis saat baris baru ditambahkan.'}
+                    </p>
+                    <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Sinkronisasi Aktif dengan Spreadsheet
+                    </span>
                   </div>
                 )}
 
@@ -431,15 +960,45 @@ export default function App() {
                             alt={article.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                             referrerPolicy="no-referrer"
+                            loading="lazy"
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              if (!target.src.includes('1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M')) {
+                                target.src = "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000";
+                              }
+                            }}
                           />
                           <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-3xl pointer-events-none" />
+                          {/* Share Button on Sub Article Image */}
+                          <div className="absolute top-3 right-3 z-10">
+                            <button
+                              type="button"
+                              onClick={(e) => handleShareArticle(article, e)}
+                              className="p-2 rounded-full bg-black/50 hover:bg-red-700 text-white backdrop-blur-md border border-white/20 transition-all shadow-md cursor-pointer flex items-center justify-center hover:scale-110 active:scale-95"
+                              title="Bagikan berita ini"
+                              aria-label="Bagikan berita"
+                            >
+                              <Share2 size={13} />
+                            </button>
+                          </div>
                         </div>
                         <div className="flex flex-col flex-1 px-3 pb-3">
-                          <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-stone-800 mb-4 uppercase tracking-wider font-bold">
-                            <span className="text-red-700">{article.category}</span>
-                            <span className="text-stone-400">&bull;</span>
-                            <span className="text-stone-900">{article.readTime}</span>
-                          </motion.div>
+                          <div className="flex items-center justify-between gap-2 mb-4">
+                            <motion.div layoutId={`meta-${article.id}`} className="flex items-center space-x-2 text-xs text-stone-800 uppercase tracking-wider font-bold">
+                              <span className="text-red-700">{article.category}</span>
+                              <span className="text-stone-400">&bull;</span>
+                              <span className="text-stone-900">{article.readTime}</span>
+                            </motion.div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleShareArticle(article, e)}
+                              className="p-1.5 rounded-full bg-stone-100 hover:bg-red-50 text-stone-600 hover:text-red-700 transition-all border border-stone-200/60 cursor-pointer shrink-0 shadow-2xs hover:scale-105 active:scale-95"
+                              title="Bagikan berita ini"
+                              aria-label="Bagikan berita"
+                            >
+                              <Share2 size={13} />
+                            </button>
+                          </div>
                           <motion.h3
                             layoutId={`title-${article.id}`}
                             className="font-serif text-xl font-extrabold leading-snug mb-3 text-gray-950 group-hover:text-red-700 transition-colors duration-300"
@@ -543,7 +1102,7 @@ export default function App() {
             {/* Backdrop */}
             <div
               className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm"
-              onClick={() => setSelectedId(null)}
+              onClick={handleCloseArticle}
             />
             
             {/* Modal Content */}
@@ -556,15 +1115,19 @@ export default function App() {
                 {/* Sticky Floating Action Buttons */}
                 <div className="sticky top-0 z-50 flex justify-between items-center p-4 sm:p-6 w-full pointer-events-none">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedId(null);
-                    }}
-                    className="p-2 sm:p-3 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-black/60 transition-colors pointer-events-auto shadow-md border border-white/5"
+                    onClick={handleCloseArticle}
+                    className="p-2 sm:p-3 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-black/60 transition-colors pointer-events-auto shadow-md border border-white/5 cursor-pointer"
+                    title="Kembali"
                   >
                     <ArrowLeft size={20} />
                   </button>
-                  <button className="p-2 sm:p-3 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-black/60 transition-colors pointer-events-auto shadow-md border border-white/5">
+                  <button
+                    type="button"
+                    onClick={(e) => handleShareArticle(selectedArticle, e)}
+                    className="p-2 sm:p-3 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-red-700 transition-colors pointer-events-auto shadow-md border border-white/5 cursor-pointer"
+                    title="Bagikan berita ini"
+                    aria-label="Bagikan berita"
+                  >
                     <Share2 size={20} />
                   </button>
                 </div>
@@ -576,6 +1139,12 @@ export default function App() {
                     alt={selectedArticle.title}
                     className="w-full h-full object-cover absolute inset-0"
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (!target.src.includes('1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M')) {
+                        target.src = "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000";
+                      }
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-stone-100 via-transparent to-black/20" />
                   
@@ -628,6 +1197,21 @@ export default function App() {
                       </p>
                     ))}
                   </motion.div>
+
+                  {/* Share Action Callout in Article Modal */}
+                  <div className="mt-12 pt-6 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans">
+                    <p className="text-sm text-stone-600 font-medium text-center sm:text-left">
+                      Bagikan informasi dan warta ini kepada rekan kerja atau grup komunikasi Anda.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(e) => handleShareArticle(selectedArticle, e)}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-red-700 hover:bg-red-800 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all cursor-pointer shrink-0 active:scale-95"
+                    >
+                      <Share2 size={16} />
+                      <span>Bagikan Berita Ini</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -635,57 +1219,126 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Lightbox, and Profile Modals */}
+      {/* Deluxe Lightbox Modal */}
       <AnimatePresence>
         {selectedPhoto && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6"
+            className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6"
           >
             {/* Backdrop */}
             <div
-              className="absolute inset-0 bg-black/90 backdrop-blur-md"
+              className="absolute inset-0 bg-stone-950/95 backdrop-blur-xl"
               onClick={() => setSelectedPhoto(null)}
             />
             
-            {/* Lightbox Content */}
+            {/* Lightbox Content Window */}
             <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 180 }}
-              className="relative max-w-4xl w-full bg-stone-900 border border-stone-800 text-white rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10"
+              initial={{ scale: 0.94, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.94, opacity: 0 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 220 }}
+              className="relative max-w-5xl w-full max-h-[96vh] bg-stone-900 border border-stone-800 text-white rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10"
             >
-              <button
-                onClick={() => setSelectedPhoto(null)}
-                className="absolute top-4 right-4 z-20 p-2.5 bg-black/60 hover:bg-black/80 rounded-full text-white/80 hover:text-white transition-colors cursor-pointer border border-white/10"
-              >
-                <X size={20} />
-              </button>
+              {/* Top Navigation & Actions Bar */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-800 bg-stone-950/80 backdrop-blur-md shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-red-400 bg-red-950/60 border border-red-800/60 px-2.5 py-1 rounded-lg font-sans">
+                    {currentPhotoIndex >= 0 ? `Foto ${currentPhotoIndex + 1} dari ${photos.length}` : 'Dokumentasi Kegiatan'}
+                  </span>
+                  <span className="text-xs text-stone-400 hidden sm:inline truncate max-w-xs md:max-w-md font-sans">
+                    {selectedPhoto.title}
+                  </span>
+                </div>
 
-              <div className="relative aspect-[16/10] overflow-hidden bg-black flex items-center justify-center">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => handleSharePhoto(selectedPhoto, e)}
+                    className="p-2 bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white rounded-xl transition-all border border-stone-700 cursor-pointer"
+                    title="Bagikan foto atau salin tautan"
+                  >
+                    <Share2 size={17} />
+                  </button>
+                  <a
+                    href={selectedPhoto.imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white rounded-xl transition-all border border-stone-700 cursor-pointer inline-flex items-center"
+                    title="Buka Foto Resolusi Asli di Tab Baru"
+                  >
+                    <ExternalLink size={17} />
+                  </a>
+                  <button
+                    onClick={() => setSelectedPhoto(null)}
+                    className="p-2 bg-stone-800/80 hover:bg-red-700 text-stone-300 hover:text-white rounded-xl transition-all border border-stone-700 cursor-pointer"
+                    title="Tutup (Esc)"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Image Area with Previous / Next Arrows */}
+              <div className="relative flex-1 min-h-[300px] max-h-[62vh] bg-black flex items-center justify-center p-2 sm:p-4 select-none">
                 <img
                   src={selectedPhoto.imageUrl}
                   alt={selectedPhoto.title}
-                  className="w-full h-full object-contain"
+                  className="max-h-full max-w-full object-contain rounded-lg shadow-2xl transition-all duration-300"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.src.includes('1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M')) {
+                      target.src = "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600";
+                    }
+                  }}
                 />
+
+                {/* Left Arrow Button */}
+                {photos.length > 1 && (
+                  <button
+                    onClick={handlePrevPhoto}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/60 hover:bg-red-700 text-white/80 hover:text-white transition-all backdrop-blur-md border border-white/10 shadow-lg cursor-pointer group"
+                    aria-label="Foto Sebelumnya"
+                  >
+                    <ChevronLeft size={22} className="group-hover:-translate-x-0.5 transition-transform" />
+                  </button>
+                )}
+
+                {/* Right Arrow Button */}
+                {photos.length > 1 && (
+                  <button
+                    onClick={handleNextPhoto}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/60 hover:bg-red-700 text-white/80 hover:text-white transition-all backdrop-blur-md border border-white/10 shadow-lg cursor-pointer group"
+                    aria-label="Foto Selanjutnya"
+                  >
+                    <ChevronRight size={22} className="group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                )}
               </div>
 
-              <div className="p-6 md:p-8 border-t border-stone-800 bg-stone-950/95 font-sans">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                  <h3 className="font-serif text-2xl font-bold bg-gradient-to-r from-white via-stone-200 to-stone-400 bg-clip-text text-transparent">
+              {/* Caption & Metadata Sheet */}
+              <div className="p-5 md:p-7 border-t border-stone-800 bg-stone-950/95 font-sans overflow-y-auto max-h-[30vh]">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <h3 className="font-serif text-xl sm:text-2xl font-bold text-white leading-tight">
                     {selectedPhoto.title}
                   </h3>
-                  <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider text-stone-400">
-                    <span className="px-2.5 py-1 bg-stone-800 rounded">📅 {selectedPhoto.date}</span>
-                    <span className="px-2.5 py-1 bg-stone-800 rounded text-red-400">📍 {selectedPhoto.location}</span>
+                  <div className="flex items-center gap-3 text-xs font-semibold text-stone-400">
+                    <span>📅 {selectedPhoto.date}</span>
+                    <span aria-hidden="true">&middot;</span>
+                    <span className="text-red-400">📍 {selectedPhoto.location}</span>
                   </div>
                 </div>
-                <p className="text-sm md:text-base text-stone-300 leading-relaxed max-w-3xl">
-                  {selectedPhoto.description}
-                </p>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90">
+                    Keterangan Foto:
+                  </span>
+                  <p className="text-sm md:text-base text-stone-300 leading-relaxed font-normal">
+                    {selectedPhoto.description}
+                  </p>
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -768,6 +1421,21 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Toast Notification for Share and Copy Actions */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-stone-900/95 backdrop-blur-md text-white text-xs sm:text-sm font-semibold px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-stone-700/80 pointer-events-none"
+          >
+            <Check size={18} className="text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
           </motion.div>
         )}
       </AnimatePresence>
