@@ -2,11 +2,15 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Menu, ArrowLeft, Clock, Share2, Camera, X, MapPin, Mail, Phone,
-  ZoomIn, ChevronLeft, ChevronRight, Download, Maximize2, Check, ExternalLink, Sparkles
+  ZoomIn, ChevronLeft, ChevronRight, Download, Maximize2, Check, ExternalLink, Sparkles,
+  Shield, ShieldCheck
 } from 'lucide-react';
-import Papa from 'papaparse';
 import { plnArticles as initialPlnArticles, nasionalArticles as initialNasionalArticles, activityPhotos as initialActivityPhotos } from './data';
 import type { Article, ActivityPhoto } from './data';
+import { AdminPanel } from './components/AdminPanel';
+import { AdminLoginModal } from './components/AdminLoginModal';
+import { apiService } from './services/api';
+import { authService, AuthUser } from './services/auth';
 
 // Helper to convert any Google Drive URL format into direct high-resolution image stream
 function formatDriveImageUrl(rawUrl: string | undefined | null): string {
@@ -67,9 +71,20 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<ActivityPhoto | null>(null);
   
+  // Administrator authentication state (sesi aman berbasis token backend)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => authService.isAuthenticated());
+  const [adminUser, setAdminUser] = useState<AuthUser | null>(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+
+  // Status koneksi REST API Termux / SQLite backend
+  const [isApiConnected, setIsApiConnected] = useState<boolean>(false);
+
+  // Sumber data artikel dan foto aktif (dari SQLite REST API)
   const [plnArticles, setPlnArticles] = useState<Article[]>(initialPlnArticles);
   const [nasionalArticles, setNasionalArticles] = useState<Article[]>(initialNasionalArticles);
   const [photos, setPhotos] = useState<ActivityPhoto[]>(initialActivityPhotos);
+
   const [isLoadingNews, setIsLoadingNews] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -80,206 +95,255 @@ export default function App() {
     }, 3000);
   }, []);
 
-  const fetchSpreadsheetNews = useCallback(() => {
-    const timestamp = Date.now();
-    const plnCsvUrl = `https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=212834116&_t=${timestamp}`;
-    const nasionalCsvUrl = `https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=1747603770&_t=${timestamp}`;
-    const photoCsvUrl = `https://docs.google.com/spreadsheets/d/1-vbYnbrgysALOVHv__RdRAF5xhMjEPgMfHC1yYM8Sks/export?format=csv&gid=1919240054&_t=${timestamp}`;
+  // Verifikasi sesi token administrator saat inisialisasi aplikasi
+  useEffect(() => {
+    if (authService.isAuthenticated()) {
+      authService.getMe()
+        .then((user) => {
+          setIsAuthenticated(true);
+          setAdminUser(user);
+        })
+        .catch(() => {
+          setIsAuthenticated(false);
+          setAdminUser(null);
+          setIsAdminPanelOpen(false);
+        });
+    } else {
+      setIsAuthenticated(false);
+      setAdminUser(null);
+      setIsAdminPanelOpen(false);
+    }
 
+    const handleAuthExpired = () => {
+      setIsAuthenticated(false);
+      setAdminUser(null);
+      setIsAdminPanelOpen(false);
+      setIsLoginModalOpen(true);
+      showToast('Sesi administrator telah berakhir. Silakan login kembali.');
+    };
+
+    const handleLoggedOut = () => {
+      setIsAuthenticated(false);
+      setAdminUser(null);
+      setIsAdminPanelOpen(false);
+      setIsLoginModalOpen(true);
+      showToast('Logout berhasil. Sesi administrator telah diakhiri.');
+    };
+
+    window.addEventListener('sp_pln_auth_expired', handleAuthExpired);
+    window.addEventListener('sp_pln_logged_out', handleLoggedOut);
+    return () => {
+      window.removeEventListener('sp_pln_auth_expired', handleAuthExpired);
+      window.removeEventListener('sp_pln_logged_out', handleLoggedOut);
+    };
+  }, [showToast]);
+
+  const handleAuthErrorFallback = useCallback((err: any) => {
+    if (
+      err?.message?.includes('Akses ditolak') || 
+      err?.message?.includes('Sesi administrator') || 
+      err?.message?.includes('401')
+    ) {
+      setIsAuthenticated(false);
+      setAdminUser(null);
+      setIsLoginModalOpen(true);
+      showToast('Sesi administrator telah kedaluwarsa. Silakan login kembali.');
+    }
+  }, [showToast]);
+
+  // Admin mutation handlers berkomunikasi langsung dengan REST API SQLite di Termux Android
+  const handleAddPlnArticle = async (articleData: Omit<Article, 'id'>) => {
+    try {
+      const created = await apiService.createArticle({
+        ...articleData,
+        type: 'pln'
+      });
+      setPlnArticles((prev) => [created, ...prev.filter((a) => a.id !== created.id)]);
+      setIsApiConnected(true);
+      showToast('Berita SP PLN Kalbar berhasil disimpan ke SQLite!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal menyimpan berita: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleAddNasionalArticle = async (articleData: Omit<Article, 'id'>) => {
+    try {
+      const created = await apiService.createArticle({
+        ...articleData,
+        type: 'nasional'
+      });
+      setNasionalArticles((prev) => [created, ...prev.filter((a) => a.id !== created.id)]);
+      setIsApiConnected(true);
+      showToast('Berita Nasional berhasil disimpan ke SQLite!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal menyimpan berita nasional: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleAddPhoto = async (photoData: Omit<ActivityPhoto, 'id'>) => {
+    try {
+      const created = await apiService.createPhoto(photoData);
+      setPhotos((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
+      setIsApiConnected(true);
+      showToast('Foto kegiatan berhasil disimpan ke SQLite!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal menyimpan foto: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleDeletePlnArticle = async (id: string) => {
+    try {
+      await apiService.deleteArticle(id);
+      setPlnArticles((prev) => prev.filter((a) => a.id !== id));
+      showToast('Berita berhasil dihapus dari SQLite!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal menghapus berita: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleDeleteNasionalArticle = async (id: string) => {
+    try {
+      await apiService.deleteArticle(id);
+      setNasionalArticles((prev) => prev.filter((a) => a.id !== id));
+      showToast('Berita nasional berhasil dihapus dari SQLite!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal menghapus berita: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleDeletePhoto = async (id: string) => {
+    try {
+      await apiService.deletePhoto(id);
+      setPhotos((prev) => prev.filter((p) => p.id !== id));
+      showToast('Foto kegiatan berhasil dihapus dari SQLite!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal menghapus foto: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleLogout = async () => {
+    await authService.logout();
+    setIsAuthenticated(false);
+    setAdminUser(null);
+    setIsAdminPanelOpen(false);
+    showToast('Berhasil logout dari mode administrator');
+  };
+
+  const handleUpdatePlnArticle = async (id: string, updatedData: Partial<Article>) => {
+    try {
+      const updated = await apiService.updateArticle(id, updatedData as any);
+      setPlnArticles((prev) => prev.map((a) => (a.id === id ? updated : a)));
+      showToast('Berita SP PLN Kalbar berhasil diperbarui!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal memperbarui berita: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleUpdateNasionalArticle = async (id: string, updatedData: Partial<Article>) => {
+    try {
+      const updated = await apiService.updateArticle(id, updatedData as any);
+      setNasionalArticles((prev) => prev.map((a) => (a.id === id ? updated : a)));
+      showToast('Berita Nasional berhasil diperbarui!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal memperbarui berita: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const handleUpdatePhoto = async (id: string, updatedData: Partial<ActivityPhoto>) => {
+    try {
+      const updated = await apiService.updatePhoto(id, updatedData as any);
+      setPhotos((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      showToast('Foto kegiatan berhasil diperbarui!');
+    } catch (err: any) {
+      handleAuthErrorFallback(err);
+      showToast(`Gagal memperbarui foto: ${err?.message || 'Server error'}`);
+    }
+  };
+
+  const customPlnIds = useMemo(() => new Set(plnArticles.map(a => a.id)), [plnArticles]);
+  const customNasionalIds = useMemo(() => new Set(nasionalArticles.map(a => a.id)), [nasionalArticles]);
+  const customPhotoIds = useMemo(() => new Set(photos.map(p => p.id)), [photos]);
+
+  // Pengambilan data dari REST API (Express + SQLite di Termux Android)
+  const loadData = useCallback(async () => {
     setIsLoadingNews(true);
+    try {
+      const [fetchedPln, fetchedNasional, fetchedPhotos] = await Promise.all([
+        apiService.getArticles('pln').catch(() => null),
+        apiService.getArticles('nasional').catch(() => null),
+        apiService.getPhotos().catch(() => null),
+      ]);
 
-    const fetchPln = fetch(plnCsvUrl)
-      .then(res => res.text())
-      .then(csvText => {
-        Papa.parse(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            const parsedArticles: Article[] = results.data.map((row: any, index: number) => {
-              const rawImage = getRowField(row, [
-                'link foto dalam bentuk jpg',
-                'upload foto dalam bentuk jpg',
-                'link foto',
-                'upload foto',
-                'foto',
-                'gambar',
-                'image',
-                'jpg',
-                'png',
-                'drive',
-                'photo'
-              ]);
-              const imageUrl = formatDriveImageUrl(rawImage);
+      if (fetchedPln !== null && fetchedNasional !== null && fetchedPhotos !== null) {
+        setIsApiConnected(true);
+        if (fetchedPln.length > 0) setPlnArticles(fetchedPln);
+        if (fetchedNasional.length > 0) setNasionalArticles(fetchedNasional);
+        if (fetchedPhotos.length > 0) setPhotos(fetchedPhotos);
+      } else {
+        const healthy = await apiService.checkHealth();
+        setIsApiConnected(healthy);
+        if (fetchedPln) setPlnArticles(fetchedPln);
+        if (fetchedNasional) setNasionalArticles(fetchedNasional);
+        if (fetchedPhotos) setPhotos(fetchedPhotos);
+      }
+    } catch {
+      setIsApiConnected(false);
+    } finally {
+      setIsLoadingNews(false);
+    }
+  }, []);
 
-              const title = getRowField(row, ['judul berita', 'judul', 'title', 'berita']);
-              const excerpt = getRowField(row, ['sub berita/lead berita', 'sub berita', 'lead berita', 'sub', 'lead', 'ringkasan', 'excerpt']);
-              const content = getRowField(row, ['isi berita', 'isi', 'konten', 'content', 'body']);
-              const author = getRowField(row, ['informasi penulis', 'penulis', 'author', 'reporter', 'oleh']) || 'Humas SP PLN Kalbar';
-              const dateVal = getRowField(row, ['tanggal berita', 'tanggal', 'date']);
-              const timeVal = getRowField(row, ['waktu upload berita', 'waktu upload', 'waktu', 'time', 'jam']);
-              const formattedDate = dateVal && timeVal ? `${dateVal} • ${timeVal}` : dateVal || timeVal || 'Hari ini';
+  const [settings, setSettings] = useState<Record<string, string>>({
+    profile_title: "Profil Serikat Pekerja",
+    profile_subtitle: "SP PLN Unit Induk Distribusi Kalimantan Barat",
+    profile_about: "Serikat Pekerja PT PLN (Persero) Unit Induk Distribusi Kalimantan Barat merupakan wadah kebersamaan dan perjuangan karyawan yang berasaskan Pancasila and UUD 1945. Kami berkomitmen mendukung keandalan listrik bagi seluruh rakyat Kalimantan Barat sekaligus memperjuangkan hak-hak normatif dan kesejahteraan bagi seluruh anggota.",
+    profile_visi: "Menjaga kesinambungan PT PLN (Persero) agar tetap tumbuh dan berkembang sebagai Pengemban Amanah Konstitusi dibidang Ketenagalistrikan yang terintegrasi dari Pembangkitan, transmisi, distribusi dan penjualan;\nMeningkatkan Kesejahteraan Insan PLN dan mengawal pembinaan Sistim Karir pegawai yang berkeadilan dan berkesinambungan sesuai dengan kompetensinya agar PLN sebagai pengemban Amanah Konstitusi dibidang ketenagalistrikan dikelola dengan baik dan benar sesuai prinsip Good Coorporate Governance (GCG);",
+    profile_misi: "",
+    profile_nilai: "Melalui semangat kemitraan yang produktif, kami berkomitmen menjaga dedikasi pelayanan tanpa putus, kesetiaan penuh kawan sekerja, serta kepatuhan penuh akan keselamatan kerja demi keberlangsungan pelayanan kelistrikan bagi masyarakat luas.",
+    footer_slogan_1: "SP PLN! Yes! Kuat! Bersatu!",
+    footer_slogan_2: "PLN! Jaya! Terbaik!",
+    footer_slogan_3: "Unbundling! NO!!!",
+    footer_slogan_4: "INDONESIA! Bangkit, Berdaulat, Merdeka, Merdeka, Merdeka!!!",
+    footer_address: "Jl. Gusti Sulung Lelanang No.14, Benua Melayu Darat, Kec. Pontianak Sel., Kota Pontianak, Kalimantan Barat 78243",
+    footer_email: "dpdspplnkalbar@gmail.com",
+    footer_phone: "+62 (561) 732-023"
+  });
 
-              const words = `${title} ${excerpt} ${content}`.trim().split(/\s+/).length;
-              const readMinutes = Math.max(1, Math.ceil(words / 150));
-
-              return {
-                id: `sheet-pln-${index}`,
-                title: title,
-                excerpt: excerpt || (content ? content.slice(0, 160) + '...' : ''),
-                content: content || excerpt,
-                author: author.trim(),
-                date: formattedDate,
-                category: "SP PLN Kalimantan Barat",
-                imageUrl: imageUrl || "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600",
-                readTime: `${readMinutes} Min Read`
-              };
-            });
-            
-            const validArticles = parsedArticles.filter(a => a.title.trim() !== '');
-            // Postingan terbaru berada pada baris bawah spreadsheet.
-            // Membalik urutan (reverse) memastikan baris paling bawah yang baru ditambahkan
-            // otomatis menjadi Berita Utama / postingan terdepan.
-            const sortedArticles = [...validArticles].reverse();
-            setPlnArticles(sortedArticles);
-          }
-        });
-      })
-      .catch(() => {});
-
-    const fetchNasional = fetch(nasionalCsvUrl)
-      .then(res => res.text())
-      .then(csvText => {
-        Papa.parse(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            const parsedArticles: Article[] = results.data.map((row: any, index: number) => {
-              const rawImage = getRowField(row, [
-                'link foto dalam bentuk jpg',
-                'upload foto dalam bentuk jpg',
-                'link foto',
-                'upload foto',
-                'foto',
-                'gambar',
-                'image',
-                'jpg',
-                'png',
-                'drive',
-                'photo'
-              ]);
-              const imageUrl = formatDriveImageUrl(rawImage);
-
-              const title = getRowField(row, ['judul berita', 'judul', 'title', 'berita']);
-              const excerpt = getRowField(row, ['sub berita/lead berita', 'sub berita', 'lead berita', 'sub', 'lead', 'ringkasan', 'excerpt']);
-              const content = getRowField(row, ['isi berita', 'isi', 'konten', 'content', 'body']);
-              const author = getRowField(row, ['informasi penulis', 'penulis', 'author', 'reporter', 'oleh']) || 'Redaksi Nasional';
-              const dateVal = getRowField(row, ['tanggal berita', 'tanggal', 'date']);
-              const timeVal = getRowField(row, ['waktu upload berita', 'waktu upload', 'waktu', 'time', 'jam']);
-              const formattedDate = dateVal && timeVal ? `${dateVal} • ${timeVal}` : dateVal || timeVal || 'Hari ini';
-
-              const words = `${title} ${excerpt} ${content}`.trim().split(/\s+/).length;
-              const readMinutes = Math.max(1, Math.ceil(words / 150));
-
-              return {
-                id: `sheet-nasional-${index}`,
-                title: title,
-                excerpt: excerpt || (content ? content.slice(0, 160) + '...' : ''),
-                content: content || excerpt,
-                author: author.trim(),
-                date: formattedDate,
-                category: "Berita Nasional",
-                imageUrl: imageUrl || "https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1600",
-                readTime: `${readMinutes} Min Read`
-              };
-            });
-            
-            const validArticles = parsedArticles.filter(a => a.title.trim() !== '');
-            // Baris bawah yang baru ditambahkan di tab BERITA NASIONAL otomatis menjadi postingan terdepan
-            const sortedArticles = [...validArticles].reverse();
-            setNasionalArticles(sortedArticles);
-          }
-        });
-      })
-      .catch(() => {});
-
-    const fetchPhotos = fetch(photoCsvUrl)
-      .then(res => res.text())
-      .then(csvText => {
-        Papa.parse(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            const parsedPhotos: ActivityPhoto[] = results.data.map((row: any, index: number) => {
-              const rawImage = getRowField(row, [
-                'link foto dalam bentuk jpg',
-                'upload foto dalam bentuk jpg',
-                'link foto',
-                'upload foto',
-                'foto',
-                'gambar',
-                'image',
-                'jpg',
-                'png',
-                'drive',
-                'photo',
-                'link'
-              ]);
-              const imageUrl = formatDriveImageUrl(rawImage);
-              const rawCaption = getRowField(row, [
-                'keterangan foto',
-                'keterangan',
-                'caption',
-                'deskripsi',
-                'description',
-                'isi',
-                'detail'
-              ]);
-              const explicitTitle = getRowField(row, ['judul foto', 'judul', 'title', 'nama kegiatan']);
-              const explicitDate = getRowField(row, ['tanggal kegiatan', 'tanggal foto', 'tanggal', 'date', 'waktu']);
-              const explicitLoc = getRowField(row, ['lokasi kegiatan', 'lokasi foto', 'lokasi', 'tempat', 'location']);
-
-              // Extract clean headline from caption if no explicit title
-              let derivedTitle = explicitTitle;
-              if (!derivedTitle && rawCaption) {
-                const firstSentence = rawCaption.split(/[.\n—–-]/)[0]?.trim();
-                if (firstSentence && firstSentence.length >= 8 && firstSentence.length <= 85) {
-                  derivedTitle = firstSentence;
-                } else if (rawCaption.length <= 80) {
-                  derivedTitle = rawCaption;
-                } else {
-                  derivedTitle = rawCaption.slice(0, 75).trim() + '...';
-                }
-              }
-
-              return {
-                id: `sheet-foto-${index}`,
-                title: derivedTitle || `Dokumentasi Kegiatan ${index + 1}`,
-                description: rawCaption || 'Dokumentasi resmi kegiatan Serikat Pekerja PLN UID Kalimantan Barat.',
-                date: explicitDate || 'Dokumentasi Kegiatan',
-                imageUrl: imageUrl,
-                location: explicitLoc || 'Kalimantan Barat'
-              };
-            });
-
-            const validPhotos = parsedPhotos.filter(p => p.imageUrl && p.imageUrl.trim() !== '' && !p.imageUrl.includes('undefined'));
-            // Baris bawah yang baru ditambahkan di tab FOTO KEGIATAN otomatis menjadi dokumentasi terdepan
-            const sortedPhotos = [...validPhotos].reverse();
-            setPhotos(sortedPhotos);
-          }
-        });
-      })
-      .catch(() => {});
-
-    Promise.allSettled([fetchPln, fetchNasional, fetchPhotos])
-      .finally(() => setIsLoadingNews(false));
+  const loadSettings = useCallback(async () => {
+    try {
+      const fetched = await apiService.getSettings();
+      if (fetched && Object.keys(fetched).length > 0) {
+        setSettings(prev => ({ ...prev, ...fetched }));
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
-    fetchSpreadsheetNews();
-    // Auto-refresh data every 20 seconds for live sync
-    const interval = setInterval(fetchSpreadsheetNews, 20000);
+    loadSettings();
+  }, [loadSettings]);
+
+  const handleUpdateSettings = async (newSettings: Record<string, string>) => {
+    await apiService.updateSettings(newSettings);
+    setSettings(newSettings);
+    showToast('Pengaturan berhasil diperbarui!');
+  };
+
+  useEffect(() => {
+    loadData();
+    // Sinkronisasi otomatis setiap 25 detik
+    const interval = setInterval(loadData, 25000);
     return () => clearInterval(interval);
-  }, [fetchSpreadsheetNews]);
+  }, [loadData]);
 
 
   useEffect(() => {
@@ -492,6 +556,7 @@ export default function App() {
               setIsPhotoGalleryOpen(false);
               setIsProfileOpen(false);
               setSelectedPhoto(null);
+              setIsAdminPanelOpen(false);
             }}
             className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0"
           >
@@ -508,12 +573,55 @@ export default function App() {
               setIsPhotoGalleryOpen(false);
               setIsProfileOpen(false);
               setSelectedPhoto(null);
+              setIsAdminPanelOpen(false);
             }}
             className="font-serif font-bold tracking-tight sm:tracking-normal md:tracking-wide drop-shadow-md text-center cursor-pointer hover:opacity-90 transition-all flex-1 leading-tight sm:leading-snug text-base sm:text-2xl md:text-3xl lg:text-[34px] px-2 sm:px-4 pb-3 sm:pb-5 md:pb-[29px]"
           >
             Berita SP PLN Kalimantan Barat
           </div>
-          <div className="shrink-0 transition-all duration-300 w-[50px] sm:w-[61px] md:w-[71px]" /> {/* Spacer for centering */}
+          <div className="shrink-0 transition-all duration-300 w-[50px] sm:w-[61px] md:w-[71px] flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                if (!authService.isAuthenticated()) {
+                  setIsAuthenticated(false);
+                  setAdminUser(null);
+                  setIsAdminPanelOpen(false);
+                  setIsLoginModalOpen(true);
+                } else {
+                  authService.getMe()
+                    .then((user) => {
+                      setIsAuthenticated(true);
+                      setAdminUser(user);
+                      setIsAdminPanelOpen(prev => !prev);
+                      setIsProfileOpen(false);
+                      setIsPhotoGalleryOpen(false);
+                      setSelectedId(null);
+                    })
+                    .catch(() => {
+                      setIsAuthenticated(false);
+                      setAdminUser(null);
+                      setIsAdminPanelOpen(false);
+                      setIsLoginModalOpen(true);
+                      showToast('Sesi administrator telah berakhir. Silakan login kembali.');
+                    });
+                }
+              }}
+              title={isAuthenticated ? (isAdminPanelOpen ? "Tutup Panel Admin" : "Buka Panel Administrator") : "Login Administrator"}
+              className={`p-1.5 sm:p-2 md:p-2.5 rounded-full transition-all duration-300 cursor-pointer flex items-center justify-center relative mb-3 sm:mb-5 md:mb-[27px] ${
+                isAuthenticated 
+                  ? 'bg-amber-400 text-stone-950 shadow-md shadow-amber-400/40 ring-2 ring-white/70 hover:scale-105 active:scale-95' 
+                  : 'bg-white/15 hover:bg-white/25 text-white/90 hover:text-white backdrop-blur-sm border border-white/20 hover:scale-105 active:scale-95'
+              }`}
+              aria-label="Ikon Masuk Admin"
+            >
+              {isAuthenticated ? (
+                <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6 text-stone-950" />
+              ) : (
+                <Shield className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+              )}
+            </button>
+          </div>
         </div>
       </motion.header>
 
@@ -532,9 +640,10 @@ export default function App() {
               setSelectedId(null);
               setIsProfileOpen(false);
               setIsPhotoGalleryOpen(false);
+              setIsAdminPanelOpen(false);
             }}
             className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
-              !isProfileOpen && !isPhotoGalleryOpen && !selectedId
+              !isProfileOpen && !isPhotoGalleryOpen && !isAdminPanelOpen && !selectedId
                 ? 'bg-red-700 text-white shadow-md' 
                 : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200/80'
             }`}
@@ -545,6 +654,7 @@ export default function App() {
             onClick={() => {
               setIsProfileOpen(true);
               setIsPhotoGalleryOpen(false);
+              setIsAdminPanelOpen(false);
               setSelectedId(null);
             }}
             className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
@@ -559,6 +669,7 @@ export default function App() {
             onClick={() => {
               setIsPhotoGalleryOpen(true);
               setIsProfileOpen(false);
+              setIsAdminPanelOpen(false);
               setSelectedId(null);
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
@@ -570,13 +681,75 @@ export default function App() {
             <Camera size={14} className={isPhotoGalleryOpen ? "text-white" : "text-stone-500"} />
             <span>Foto Kegiatan</span>
           </button>
+          
+          {/* Menu Panel Administrator - hanya muncul setelah login administrator berhasil */}
+          {isAuthenticated && (
+            <button 
+              onClick={() => {
+                setIsAdminPanelOpen(true);
+                setIsPhotoGalleryOpen(false);
+                setIsProfileOpen(false);
+                setSelectedId(null);
+              }}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider transition-all duration-300 pointer-events-auto cursor-pointer shadow-xs ${
+                isAdminPanelOpen 
+                  ? 'bg-red-700 text-white shadow-md' 
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+              }`}
+            >
+              <ShieldCheck size={14} className={isAdminPanelOpen ? "text-white" : "text-amber-700"} />
+              <span>Panel Administrator</span>
+            </button>
+          )}
         </div>
       </motion.div>
 
       {/* Main Content */}
       <main className="flex-1 relative z-10 pt-44 md:pt-48 pb-20 px-6 max-w-7xl mx-auto w-full">
         <AnimatePresence mode="wait">
-          {isPhotoGalleryOpen ? (
+          {isAdminPanelOpen && isAuthenticated ? (
+            <motion.div
+              key="admin-panel"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            >
+              <AdminPanel
+                onAddPlnArticle={handleAddPlnArticle}
+                onAddNasionalArticle={handleAddNasionalArticle}
+                onAddPhoto={handleAddPhoto}
+                onUpdatePlnArticle={handleUpdatePlnArticle}
+                onUpdateNasionalArticle={handleUpdateNasionalArticle}
+                onUpdatePhoto={handleUpdatePhoto}
+                onDeletePlnArticle={handleDeletePlnArticle}
+                onDeleteNasionalArticle={handleDeleteNasionalArticle}
+                onDeletePhoto={handleDeletePhoto}
+                plnArticles={plnArticles}
+                nasionalArticles={nasionalArticles}
+                photos={photos}
+                customPlnIds={customPlnIds}
+                customNasionalIds={customNasionalIds}
+                customPhotoIds={customPhotoIds}
+                isApiConnected={isApiConnected}
+                adminUsername={adminUser?.username || 'admin'}
+                settings={settings}
+                onUpdateSettings={handleUpdateSettings}
+                onClose={() => setIsAdminPanelOpen(false)}
+                onExitAdminMode={handleLogout}
+                onViewArticle={(id) => {
+                  setIsAdminPanelOpen(false);
+                  setSelectedId(id);
+                }}
+                onViewPhoto={(photo) => {
+                  setIsAdminPanelOpen(false);
+                  setIsPhotoGalleryOpen(true);
+                  setSelectedPhoto(photo);
+                }}
+                showToast={showToast}
+              />
+            </motion.div>
+          ) : isPhotoGalleryOpen ? (
             <motion.div
               key="photo-gallery"
               initial={{ opacity: 0, y: 20 }}
@@ -761,11 +934,15 @@ export default function App() {
                     Belum Ada Dokumentasi Kegiatan
                   </h3>
                   <p className="text-stone-600 max-w-lg text-sm leading-relaxed mb-4">
-                    Data foto kegiatan disinkronkan langsung dari tab "FOTO KEGIATAN" di Google Spreadsheet. Dokumentasi foto baru akan langsung otomatis tampil saat baris baru ditambahkan.
+                    Belum ada dokumentasi foto kegiatan yang tersimpan di database SQLite server SP PLN Kalbar.
                   </p>
-                  <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Sinkronisasi Aktif dengan Spreadsheet
+                  <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold border ${
+                    isApiConnected 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                      : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${isApiConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                    {isApiConnected ? 'Server Terhubung' : 'Server Tidak Terhubung'}
                   </span>
                 </div>
               )}
@@ -818,7 +995,7 @@ export default function App() {
                       : 'bg-white/80 text-stone-700 hover:bg-stone-50 hover:text-red-600 border-white/60 backdrop-blur-md'
                   }`}
                 >
-                  <span>Berita Nasional</span>
+                  <span>Berita SP PLN Nasional</span>
                 </button>
               </div>
 
@@ -836,12 +1013,8 @@ export default function App() {
                     <div>
                       <h2 className="font-serif text-2xl md:text-3xl font-black text-stone-900 tracking-tight">
                         {activeTab === 'pln' && 'Berita SP PLN Kalimantan Barat'}
-                        {activeTab === 'nasional' && 'Berita Nasional'}
+                        {activeTab === 'nasional' && 'Berita SP PLN Nasional'}
                       </h2>
-                      <p className="text-xs text-stone-500 font-medium">
-                        {activeTab === 'pln' && 'Liputan kegiatan, advokasi, dan sinergi ketenagakerjaan UID Kalimantan Barat'}
-                        {activeTab === 'nasional' && 'Sorotan kedaulatan energi, RUPTL, dan kebijakan ketenagalistrikan nasional'}
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -925,16 +1098,20 @@ export default function App() {
                       <Menu size={28} />
                     </div>
                     <h3 className="font-serif text-2xl font-black text-stone-900 mb-2">
-                      {activeTab === 'pln' ? 'Belum Ada Berita SP PLN Kalbar' : 'Belum Ada Berita Nasional'}
+                      {activeTab === 'pln' ? 'Belum Ada Berita SP PLN Kalbar' : 'Belum Ada Berita SP PLN Nasional'}
                     </h3>
                     <p className="text-stone-600 max-w-lg text-sm leading-relaxed mb-4">
                       {activeTab === 'pln'
-                        ? 'Data berita SP PLN Kalbar disinkronkan langsung dari sheet "BERITA SP PLN KALBAR" pada Google Spreadsheet.'
-                        : 'Data berita nasional disinkronkan langsung dari sheet "BERITA NASIONAL" pada Google Spreadsheet. Berita baru akan langsung tampil otomatis saat baris baru ditambahkan.'}
+                        ? 'Belum ada artikel berita SP PLN Kalbar yang dipublikasikan di database SQLite server.'
+                        : 'Belum ada artikel berita SP PLN nasional yang dipublikasikan di database SQLite server.'}
                     </p>
-                    <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Sinkronisasi Aktif dengan Spreadsheet
+                    <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold border ${
+                      isApiConnected 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                        : 'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${isApiConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                      {isApiConnected ? 'Server Terhubung' : 'Server Tidak Terhubung'}
                     </span>
                   </div>
                 )}
@@ -1044,10 +1221,10 @@ export default function App() {
               </div>
             </div>
             <p className="text-sm text-red-700 leading-relaxed max-w-2xl flex flex-col space-y-1">
-              <span className="text-base font-black text-red-700 tracking-wide">SP PLN! Yes! Kuat! Bersatu!</span>
-              <span className="text-base font-black text-red-700 tracking-wide">PLN! Jaya! Terbaik!</span>
-              <span className="text-base font-black text-red-700 tracking-wide">Unbundling! <span className="text-red-800 font-black underline decoration-2">NO!!!</span></span>
-              <span className="text-lg font-black text-red-800 tracking-wide">INDONESIA! Bangkit, Berdaulat, Merdeka, Merdeka, Merdeka!!!</span>
+              <span className="text-base font-black text-red-700 tracking-wide">{settings.footer_slogan_1 || "SP PLN! Yes! Kuat! Bersatu!"}</span>
+              <span className="text-base font-black text-red-700 tracking-wide">{settings.footer_slogan_2 || "PLN! Jaya! Terbaik!"}</span>
+              <span className="text-base font-black text-red-700 tracking-wide">Unbundling! <span className="text-red-800 font-black underline decoration-2">{settings.footer_slogan_3 || "NO!!!"}</span></span>
+              <span className="text-lg font-black text-red-800 tracking-wide">{settings.footer_slogan_4 || "INDONESIA! Bangkit, Berdaulat, Merdeka, Merdeka, Merdeka!!!"}</span>
             </p>
           </div>
 
@@ -1060,19 +1237,19 @@ export default function App() {
               <li className="flex items-start gap-2.5">
                 <MapPin size={16} className="text-red-700 shrink-0 mt-0.5" />
                 <span className="leading-relaxed text-gray-850">
-                  Jl. Gusti Sulung Lelanang No.14, Benua Melayu Darat, Kec. Pontianak Sel., Kota Pontianak, Kalimantan Barat 78243
+                  {settings.footer_address || "Jl. Gusti Sulung Lelanang No.14, Benua Melayu Darat, Kec. Pontianak Sel., Kota Pontianak, Kalimantan Barat 78243"}
                 </span>
               </li>
               <li className="flex items-center gap-2.5">
                 <Mail size={16} className="text-red-700 shrink-0" />
                 <span className="text-gray-900">
-                  dpdspplnkalbar@gmail.com
+                  {settings.footer_email || "dpdspplnkalbar@gmail.com"}
                 </span>
               </li>
               <li className="flex items-center gap-2.5">
                 <Phone size={16} className="text-emerald-700 shrink-0" />
                 <span className="font-mono text-gray-900">
-                  +62 (561) 732-023
+                  {settings.footer_phone || "+62 (561) 732-023"}
                 </span>
               </li>
             </ul>
@@ -1369,8 +1546,8 @@ export default function App() {
               <div className="flex items-center justify-between p-6 border-b border-stone-200 bg-stone-50">
                 <div className="flex items-center gap-3">
                   <div>
-                    <h2 className="text-xl md:text-2xl font-serif font-black text-stone-900">Profil Serikat Pekerja</h2>
-                    <p className="text-xs text-stone-500 font-sans font-medium">SP PLN Unit Induk Distribusi Kalimantan Barat</p>
+                    <h2 className="text-xl md:text-2xl font-serif font-black text-stone-900">{settings.profile_title || "Profil Serikat Pekerja"}</h2>
+                    <p className="text-xs text-stone-500 font-sans font-medium">{settings.profile_subtitle || "SP PLN Unit Induk Distribusi Kalimantan Barat"}</p>
                   </div>
                 </div>
                 <button
@@ -1395,28 +1572,27 @@ export default function App() {
                   </div>
                   
                   <h3 className="font-serif text-xl font-bold text-stone-900 mb-2">Tentang Kami</h3>
-                  <p className="mb-6 text-stone-700 font-medium">
-                    Serikat Pekerja PT PLN (Persero) Unit Induk Distribusi Kalimantan Barat merupakan wadah kebersamaan dan perjuangan karyawan yang berasaskan Pancasila and UUD 1945. Kami berkomitmen mendukung keandalan listrik bagi seluruh rakyat Kalimantan Barat sekaligus memperjuangkan hak-hak normatif dan kesejahteraan bagi seluruh anggota.
+                  <p className="mb-6 text-stone-700 font-medium whitespace-pre-line">
+                    {settings.profile_about || "Serikat Pekerja PT PLN (Persero) Unit Induk Distribusi Kalimantan Barat merupakan wadah kebersamaan dan perjuangan karyawan yang berasaskan Pancasila and UUD 1945. Kami berkomitmen mendukung keandalan listrik bagi seluruh rakyat Kalimantan Barat sekaligus memperjuangkan hak-hak normatif dan kesejahteraan bagi seluruh anggota."}
                   </p>
  
                   <h3 className="font-serif text-xl font-bold text-stone-900 mb-2">Visi &amp; Misi</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div className="p-4 bg-red-50/70 rounded-2xl border border-red-100">
-                      <h4 className="font-sans font-bold text-red-800 mb-1.5">Visi</h4>
-                      <div className="text-xs leading-relaxed text-stone-700 space-y-2">
-                        <p>Menjaga kesinambungan PT PLN (Persero) agar tetap tumbuh dan berkembang sebagai Pengemban Amanah Konstitusi dibidang Ketenagalistrikan yang terintegrasi dari Pembangkitan, transmisi, distribusi dan penjualan;</p>
-                        <p>Meningkatkan Kesejahteraan Insan PLN dan mengawal pembinaan Sistim Karir pegawai yang berkeadilan dan berkesinambungan sesuai dengan kompetensinya agar PLN sebagai pengemban Amanah Konstitusi dibidang ketenagalistrikan dikelola dengan baik dan benar sesuai prinsip Good Coorporate Governance (GCG);</p>
+                      <h4 className="font-sans font-bold text-red-800 mb-1.5">Visi &amp; Misi</h4>
+                      <div className="text-xs leading-relaxed text-stone-700 space-y-2 whitespace-pre-line">
+                        {settings.profile_visi || "Menjaga kesinambungan PT PLN (Persero) agar tetap tumbuh dan berkembang sebagai Pengemban Amanah Konstitusi dibidang Ketenagalistrikan yang terintegrasi dari Pembangkitan, transmisi, distribusi dan penjualan;"}
                       </div>
                     </div>
                     <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-100">
-                      <h4 className="font-sans font-bold text-amber-800 mb-1.5">Misi</h4>
-                      <p className="text-xs leading-relaxed text-stone-700">&nbsp;</p>
+                      <h4 className="font-sans font-bold text-amber-800 mb-1.5">Komitmen</h4>
+                      <p className="text-xs leading-relaxed text-stone-700">SP PLN Kalbar Solid, Kuat, Berdaulat.</p>
                     </div>
                   </div>
 
                   <h3 className="font-serif text-xl font-bold text-stone-900 mb-2">Nilai Dasar</h3>
-                  <p className="mb-4 text-stone-700 font-medium">
-                    Melalui semangat kemitraan yang produktif, kami berkomitmen menjaga dedikasi pelayanan tanpa putus, kesetiaan penuh kawan sekerja, serta kepatuhan penuh akan keselamatan kerja demi keberlangsungan pelayanan kelistrikan bagi masyarakat luas.
+                  <p className="mb-4 text-stone-700 font-medium whitespace-pre-line">
+                    {settings.profile_nilai || "Melalui semangat kemitraan yang produktif, kami berkomitmen menjaga dedikasi pelayanan tanpa putus, kesetiaan penuh kawan sekerja, serta kepatuhan penuh akan keselamatan kerja demi keberlangsungan pelayanan kelistrikan bagi masyarakat luas."}
                   </p>
                 </div>
               </div>
@@ -1439,6 +1615,21 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Modal Autentikasi Login Administrator */}
+      <AdminLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={(user) => {
+          setIsAuthenticated(true);
+          setAdminUser(user);
+          setIsAdminPanelOpen(true);
+          setIsProfileOpen(false);
+          setIsPhotoGalleryOpen(false);
+          setSelectedId(null);
+        }}
+        showToast={showToast}
+      />
     </div>
   );
 }
