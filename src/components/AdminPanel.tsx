@@ -3,12 +3,21 @@ import {
   ShieldCheck, PlusCircle, Newspaper, Globe, Camera, ArrowLeft,
   CheckCircle2, Image as ImageIcon, Trash2, Eye, LogOut,
   ExternalLink, Calendar, MapPin, User, Pencil, X, Save,
-  Key, Lock, EyeOff, AlertCircle, XCircle
+  Key, Lock, EyeOff, AlertCircle, XCircle,
+  Server, Activity, Radio, RotateCcw, Clock, Database, AlertTriangle, Loader2
 } from 'lucide-react';
 import type { Article, ActivityPhoto } from '../data';
 import { formatDriveImageUrl, getIndonesianFormattedDate, calculateReadTime } from '../utils';
-import { apiService, API_BASE_URL } from '../services/api';
+import { apiService } from '../services/api';
 import { authService } from '../services/auth';
+import { 
+  getApiBaseUrl, 
+  setApiBaseUrl, 
+  checkApiHealth, 
+  validateApiUrl, 
+  DEFAULT_API_BASE_URL,
+  ApiHealthResponse 
+} from '../config/api';
 
 interface AdminPanelProps {
   onAddPlnArticle: (article: Omit<Article, 'id'>) => void;
@@ -63,7 +72,84 @@ export function AdminPanel({
   onViewPhoto,
   showToast,
 }: AdminPanelProps) {
-  const [activeAdminTab, setActiveAdminTab] = useState<'tambah-pln' | 'tambah-nasional' | 'tambah-foto' | 'kelola' | 'edit-profil' | 'edit-footer' | 'ganti-password'>('tambah-pln');
+  const [activeAdminTab, setActiveAdminTab] = useState<'tambah-pln' | 'tambah-nasional' | 'tambah-foto' | 'kelola' | 'edit-profil' | 'edit-footer' | 'ganti-password' | 'pengaturan-api'>('tambah-pln');
+
+  // API Connection settings states
+  const [apiServerUrlInput, setApiServerUrlInput] = useState(getApiBaseUrl());
+  const [activeApiUrlDisplay, setActiveApiUrlDisplay] = useState(getApiBaseUrl());
+  const [isTestingApi, setIsTestingApi] = useState(false);
+  const [isSavingApi, setIsSavingApi] = useState(false);
+  const [apiTestResult, setApiTestResult] = useState<ApiHealthResponse | null>(null);
+  const [apiValidationError, setApiValidationError] = useState<string | null>(null);
+
+  const handleTestApiConnection = async () => {
+    setApiValidationError(null);
+    const validated = validateApiUrl(apiServerUrlInput);
+    if (!validated.valid || !validated.formattedUrl) {
+      setApiValidationError(validated.error || 'Format URL tidak valid.');
+      return;
+    }
+
+    setIsTestingApi(true);
+    try {
+      const result = await checkApiHealth(validated.formattedUrl);
+      setApiTestResult(result);
+      if (result.connected) {
+        showToast('🟢 Server Terhubung');
+      } else {
+        showToast('🔴 Server Tidak Terhubung');
+      }
+    } finally {
+      setIsTestingApi(false);
+    }
+  };
+
+  const handleSaveApiConnection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setApiValidationError(null);
+
+    // 1. Validasi URL
+    const validated = validateApiUrl(apiServerUrlInput);
+    if (!validated.valid || !validated.formattedUrl) {
+      setApiValidationError(validated.error || 'Format URL tidak valid.');
+      return;
+    }
+
+    const cleanUrl = validated.formattedUrl;
+    setIsSavingApi(true);
+
+    try {
+      // 2. Lakukan test /health terlebih dahulu
+      const health = await checkApiHealth(cleanUrl);
+      setApiTestResult(health);
+
+      if (!health.connected) {
+        // Jika gagal, jangan simpan
+        setApiValidationError(health.error || 'Server API tidak dapat dihubungi.');
+        showToast('🔴 API Tidak Terhubung: Server API tidak dapat dihubungi.');
+        setIsSavingApi(false);
+        return;
+      }
+
+      // 3. Jika berhasil: simpan ke live API_BASE_URL & localStorage
+      setApiBaseUrl(cleanUrl);
+      setActiveApiUrlDisplay(cleanUrl);
+
+      // 4. Sinkronkan ke database SQLite backend jika memungkinkan
+      await apiService.updateApiUrlSetting(cleanUrl);
+
+      showToast('URL API berhasil diperbarui');
+    } catch (err: any) {
+      setApiValidationError(err?.message || 'Gagal menyimpan URL API.');
+    } finally {
+      setIsSavingApi(false);
+    }
+  };
+
+  const handleResetApiToDefault = () => {
+    setApiServerUrlInput(DEFAULT_API_BASE_URL);
+    setApiValidationError(null);
+  };
 
   // Change password states
   const [currentPassword, setCurrentPassword] = useState('');
@@ -335,7 +421,7 @@ export function AdminPanel({
 
     try {
       const uploadedUrl = await apiService.uploadImage(file);
-      const fullUrl = uploadedUrl.startsWith('http') ? uploadedUrl : `${API_BASE_URL}${uploadedUrl}`;
+      const fullUrl = uploadedUrl.startsWith('http') ? uploadedUrl : `${getApiBaseUrl()}${uploadedUrl}`;
       setUrl(fullUrl);
       showToast('Gambar berhasil diunggah dan lolos validasi!');
     } catch (err: any) {
@@ -592,21 +678,30 @@ export function AdminPanel({
           <Key size={16} />
           <span>Ganti Password Admin</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveAdminTab('pengaturan-api');
+            const current = getApiBaseUrl();
+            setApiServerUrlInput(current);
+            setActiveApiUrlDisplay(current);
+            checkApiHealth(current).then(res => setApiTestResult(res));
+          }}
+          className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs sm:text-sm font-bold tracking-wide transition-all cursor-pointer shrink-0 ${
+            activeAdminTab === 'pengaturan-api'
+              ? 'bg-[#860120] text-white shadow-md shadow-[#860120]/20'
+              : 'bg-white hover:bg-stone-50 text-stone-700 border border-stone-200'
+          }`}
+        >
+          <Server size={16} />
+          <span>Pengaturan Server</span>
+        </button>
       </div>
 
       {/* 1. Form: Tambah Berita SP PLN Kalbar */}
       {activeAdminTab === 'tambah-pln' && (
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm">
-          <div className="mb-6 pb-4 border-b border-stone-100">
-            <h2 className="font-serif text-2xl font-bold text-stone-900 flex items-center gap-2">
-              <Newspaper className="text-red-700" size={24} />
-              Form Input Berita SP PLN Kalimantan Barat
-            </h2>
-            <p className="text-xs sm:text-sm text-stone-500 mt-1">
-              Kategori: <strong>SP PLN Kalimantan Barat</strong> (Otomatis tampil di tab Berita SP PLN Kalbar).
-            </p>
-          </div>
-
           <form onSubmit={handleSubmitPln} className="space-y-6">
             <div>
               <label className="block text-xs sm:text-sm font-bold uppercase tracking-wider text-stone-700 mb-2">
@@ -2069,6 +2164,178 @@ export function AdminPanel({
               >
                 <Save size={18} />
                 <span>SIMPAN PASSWORD</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 7. Form: Pengaturan Server */}
+      {activeAdminTab === 'pengaturan-api' && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm max-w-3xl mx-auto">
+          <div className="mb-6 pb-4 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-red-700 mb-1 flex items-center gap-1.5">
+                <Server size={13} />
+                <span>Konfigurasi Jaringan &amp; Backend</span>
+              </div>
+              <h2 className="font-serif text-2xl font-bold text-stone-900 flex items-center gap-2">
+                <Server className="text-red-700" size={24} />
+                Pengaturan Server
+              </h2>
+              <p className="text-xs sm:text-sm text-stone-500 mt-1">
+                Gunakan menu ini untuk mengubah URL backend REST API di Termux (Cloudflare Quick Tunnel) tanpa perlu mengedit source code.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-stone-100 border border-stone-200 text-stone-800 text-xs font-semibold shrink-0">
+              <Database size={15} className="text-stone-600" />
+              <span>SQLite + Express</span>
+            </div>
+          </div>
+
+          {/* Status Display Card */}
+          <div className="mb-6 p-5 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-stone-700">Status Server:</span>
+                {apiTestResult?.connected ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold shadow-xs">
+                    <CheckCircle2 size={14} className="text-emerald-600" />
+                    <span>🟢 Server Terhubung</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100 text-red-800 text-xs font-bold shadow-xs">
+                    <XCircle size={14} className="text-red-600" />
+                    <span>🔴 Server Tidak Terhubung</span>
+                  </span>
+                )}
+              </div>
+
+              {apiTestResult?.latencyMs !== undefined && (
+                <div className="flex items-center gap-1.5 text-xs text-stone-500 font-mono bg-white px-2.5 py-1 rounded-xl border border-stone-200">
+                  <Activity size={13} className="text-stone-400" />
+                  <span>{apiTestResult.latencyMs} ms latency</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2 border-t border-stone-200/60">
+              <div className="bg-white p-3 rounded-xl border border-stone-200/60">
+                <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">URL API Aktif</span>
+                <span className="font-mono text-xs text-stone-800 font-bold break-all">
+                  {activeApiUrlDisplay || 'http://127.0.0.1:3000'}
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-stone-200/60">
+                <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Database Status</span>
+                <span className="font-mono text-xs text-stone-800 flex items-center gap-1.5 font-bold">
+                  <Database size={13} className="text-emerald-600" />
+                  <span>{apiTestResult?.database ? `SQLite (${apiTestResult.database})` : 'SQLite Standby'}</span>
+                </span>
+              </div>
+            </div>
+
+            {apiTestResult?.time && (
+              <div className="text-[11px] text-stone-500 flex items-center gap-1.5 pt-1">
+                <Clock size={12} className="text-stone-400" />
+                <span>Waktu pemeriksaan terakhir: {new Date(apiTestResult.time).toLocaleTimeString('id-ID')} WIB</span>
+              </div>
+            )}
+
+            {apiTestResult && !apiTestResult.connected && apiTestResult.error && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5 text-red-600" />
+                <div>
+                  <span className="font-bold block">Koneksi Gagal:</span>
+                  <span>{apiTestResult.error}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Form Pengaturan URL */}
+          <form onSubmit={handleSaveApiConnection} className="space-y-5">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-stone-700">
+                  URL API Server <span className="text-red-600">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleResetApiToDefault}
+                  className="text-xs text-stone-400 hover:text-stone-700 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw size={12} />
+                  <span>Reset ke Default (Local)</span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-stone-400">
+                  <Globe size={16} />
+                </div>
+                <input
+                  type="text"
+                  value={apiServerUrlInput}
+                  onChange={(e) => {
+                    setApiServerUrlInput(e.target.value);
+                    if (apiValidationError) setApiValidationError(null);
+                  }}
+                  placeholder="https://xxxxx.trycloudflare.com"
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#860120] focus:border-transparent transition-all placeholder:text-stone-400 font-mono text-xs sm:text-sm"
+                  required
+                />
+              </div>
+
+              <p className="text-xs text-stone-400 mt-1.5">
+                Contoh: <code className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700 font-mono text-[11px]">https://xxxxx.trycloudflare.com</code>
+              </p>
+
+              {apiValidationError && (
+                <p className="text-xs text-red-600 font-semibold mt-2 flex items-center gap-1">
+                  <AlertTriangle size={13} />
+                  <span>{apiValidationError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleTestApiConnection}
+                disabled={isTestingApi || isSavingApi || !apiServerUrlInput.trim()}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-stone-100 hover:bg-stone-200 active:bg-stone-300 text-stone-800 font-bold text-sm transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isTestingApi ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin text-stone-600" />
+                    <span>Menguji Koneksi...</span>
+                  </>
+                ) : (
+                  <>
+                    <Radio size={16} className="text-stone-600" />
+                    <span>Test Koneksi</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSavingApi || isTestingApi || !apiServerUrlInput.trim()}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-8 rounded-2xl bg-[#860120] hover:bg-red-800 active:bg-red-900 text-white font-bold text-sm tracking-wide shadow-md shadow-red-900/20 hover:shadow-lg transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSavingApi ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin text-white" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} />
+                    <span>Simpan</span>
+                  </>
+                )}
               </button>
             </div>
           </form>

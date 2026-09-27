@@ -45,15 +45,14 @@ export const authService = {
     }
   },
 
-  // Membersihkan seluruh memori dan storage dari token/sesi admin
+  // Membersihkan seluruh memori dan storage dari token/sesi admin (menjaga konfigurasi URL API tetap ada)
   clearSession(): void {
     memoryToken = null;
     try {
       sessionStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem('sp_pln_is_admin');
-      // Bersihkan seluruh item localStorage yang terkait dengan kredensial
-      localStorage.clear();
+      // Hanya bersihkan session storage sesi aktif
       sessionStorage.clear();
     } catch {
       // Storage access error

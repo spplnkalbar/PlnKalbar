@@ -11,9 +11,25 @@ const PORT = process.env.PORT || 3000;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'database.sqlite');
 
 // ==========================================
-// KONFIGURASI AUTENTIKASI ADMINISTRATOR TUNGGAL
+// 1. AUDIT LOGGING KEAMANAN (SERVER-SIDE ONLY)
 // ==========================================
-// Kredensial tersimpan aman di sisi server via variabel lingkungan (ENV), bukan di frontend.
+function auditLog(action, details = {}) {
+  const timestamp = new Date().toISOString();
+  // Sanitasi detail untuk memastikan tidak ada password atau token yang tercatat
+  const sanitized = { ...details };
+  delete sanitized.password;
+  delete sanitized.currentPassword;
+  delete sanitized.newPassword;
+  delete sanitized.token;
+  delete sanitized.passwordHash;
+  delete sanitized.password_hash;
+
+  console.log(`[AUDIT-LOG ${timestamp}] Action: ${action} | Details: ${JSON.stringify(sanitized)}`);
+}
+
+// ==========================================
+// 2. KONFIGURASI AUTENTIKASI ADMINISTRATOR TUNGGAL
+// ==========================================
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
 const ADMIN_PASSWORD_SALT = process.env.ADMIN_PASSWORD_SALT || 'sp_pln_uid_kalbar_salt_2026';
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000; // 24 jam
@@ -33,34 +49,50 @@ if (!targetPasswordHash) {
 // In-memory token storage untuk sesi aktif
 const activeSessions = new Map(); // token => { username, expiresAt }
 
-// Simple Rate Limiter untuk mencegah brute-force pada endpoint autentikasi
-const rateLimitMap = new Map(); // ip:path => { count, resetTime }
-function authRateLimiter(req, res, next) {
+// Rate Limiter khusus untuk mencegah brute-force login
+const loginAttemptsMap = new Map(); // ip => { count, resetTime }
+
+function loginRateLimiter(req, res, next) {
   const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
-  const key = `${clientIp}:${req.path}`;
   const now = Date.now();
   const windowMs = 15 * 60 * 1000; // 15 menit
-  const maxAttempts = 5; // maksimal 5 percobaan per 15 menit
+  const maxAttempts = 5; // maksimal 5 percobaan gagal per 15 menit
 
-  const record = rateLimitMap.get(key) || { count: 0, resetTime: now + windowMs };
+  const record = loginAttemptsMap.get(clientIp) || { count: 0, resetTime: now + windowMs };
 
   if (now > record.resetTime) {
     record.count = 0;
     record.resetTime = now + windowMs;
   }
 
-  record.count += 1;
-  rateLimitMap.set(key, record);
-
-  if (record.count > maxAttempts) {
+  if (record.count >= maxAttempts) {
     const remainingSec = Math.ceil((record.resetTime - now) / 1000);
+    auditLog('LOGIN_RATE_LIMITED', { ip: clientIp, remainingSec });
     return res.status(429).json({
       success: false,
-      message: `Terlalu banyak percobaan. Silakan coba lagi dalam ${remainingSec} detik.`,
+      message: `Terlalu banyak percobaan login gagal. Silakan coba lagi dalam ${remainingSec} detik.`,
     });
   }
 
+  req.clientIp = clientIp;
+  req.loginRecord = record;
   next();
+}
+
+function registerFailedLogin(clientIp) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const record = loginAttemptsMap.get(clientIp) || { count: 0, resetTime: now + windowMs };
+  if (now > record.resetTime) {
+    record.count = 0;
+    record.resetTime = now + windowMs;
+  }
+  record.count += 1;
+  loginAttemptsMap.set(clientIp, record);
+}
+
+function resetFailedLogin(clientIp) {
+  loginAttemptsMap.delete(clientIp);
 }
 
 // Middleware untuk memverifikasi autentikasi administrator
@@ -74,6 +106,13 @@ function requireAdminAuth(req, res, next) {
   }
 
   const token = authHeader.substring(7).trim();
+  if (!token || token.length < 32) {
+    return res.status(401).json({
+      success: false,
+      message: 'Sesi administrator tidak valid.',
+    });
+  }
+
   const session = activeSessions.get(token);
 
   if (!session || Date.now() > session.expiresAt) {
@@ -87,31 +126,87 @@ function requireAdminAuth(req, res, next) {
   // Perpanjang masa aktif sesi
   session.expiresAt = Date.now() + SESSION_DURATION_MS;
   req.adminUser = session;
+  req.adminToken = token;
   next();
 }
 
-// Middlewares
-app.use(cors({ origin: '*' }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ==========================================
+// 3. CORS & SECURITY HEADERS MIDDLEWARE
+// ==========================================
+const allowedOrigins = [
+  'https://spplnkalbar.github.io',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
 
-// Header anti-caching ketat untuk proteksi data admin & pencegahan back-button caching
+if (process.env.FRONTEND_ORIGIN) {
+  const extraOrigins = process.env.FRONTEND_ORIGIN.split(',').map(o => o.trim().replace(/\/+$/, ''));
+  allowedOrigins.push(...extraOrigins);
+}
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Izinkan request tanpa origin (mobile apps, server-to-server, curl)
+    if (!origin) return callback(null, true);
+
+    const cleanOrigin = origin.trim().replace(/\/+$/, '');
+    
+    const isAllowed = allowedOrigins.some(allowed => {
+      const cleanAllowed = allowed.trim().replace(/\/+$/, '');
+      return cleanAllowed === cleanOrigin || cleanAllowed === '*';
+    }) || (process.env.NODE_ENV !== 'production' && /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(cleanOrigin))
+       || (process.env.NODE_ENV !== 'production' && /\.googleusercontent\.com$|\.run\.app$/.test(new URL(origin).hostname));
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Akses ditolak oleh kebijakan CORS.'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma'],
+  credentials: true,
+  maxAge: 86400
+};
+
+app.use(cors(corsOptions));
+// Batasi ukuran request JSON ke 1MB untuk mencegah payload flooding
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Security Headers Lengkap
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self' https: data: blob: 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' https: data:;"
+  );
   next();
 });
 
-// Konfigurasi direktori dan static serving untuk upload gambar
+// Konfigurasi direktori upload gambar dengan isolasi nama aman
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
-app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Konfigurasi Multer dengan Memory Storage untuk validasi magic bytes & MIME type
+// Melayani file upload statis dengan proteksi path traversal
+app.use('/uploads', express.static(UPLOADS_DIR, {
+  dotfiles: 'ignore',
+  index: false,
+  maxAge: '1d'
+}));
+
+// Konfigurasi Multer dengan Memory Storage untuk verifikasi magic bytes & MIME type
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -125,6 +220,11 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+// Helper validasi ID numeric
+function isValidId(id) {
+  return /^\d+$/.test(String(id).trim());
+}
 
 // Database initialization
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -212,68 +312,50 @@ function initDatabase() {
     `, () => {
       db.get('SELECT * FROM admin_users WHERE id = 1 OR username = ?', [ADMIN_USERNAME], (err, row) => {
         if (!err && row) {
-          // Sync in-memory hash with SQLite database state
           targetPasswordHash = row.password_hash;
         } else if (!err && !row) {
-          // Initialize single admin user in SQLite
           const now = new Date().toISOString();
           db.run(
             'INSERT INTO admin_users (id, username, password_hash, created_at, updated_at) VALUES (1, ?, ?, ?, ?)',
-            [ADMIN_USERNAME, targetPasswordHash, now, now]
+            [ADMIN_USERNAME, targetPasswordHash, now, now],
+            (insertErr) => {
+              if (insertErr) {
+                console.error('❌ Gagal inisialisasi akun admin di SQLite:', insertErr.message);
+              } else {
+                console.log('✅ Akun administrator tunggal berhasil diinisialisasi di SQLite.');
+              }
+            }
           );
         }
       });
-    });
-    db.get('SELECT COUNT(*) as count FROM articles', (err, row) => {
-      if (!err && row && row.count === 0) {
-        console.log('🌱 Menyiapkan data awal artikel SP PLN Kalbar...');
-        const stmt = db.prepare(`
-          INSERT INTO articles (title, excerpt, content, author, date, category, imageUrl, readTime, type)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        stmt.run(
-          "Ruang Dialog Energi Kupas RUPTL 2025–2034 dan Masa Depan Kelistrikan Kalbar",
-          "Ketua DPD Serikat Pekerja PLN UID Kalbar, Akhmad Junaidi, menyampaikan pemaparan materi dalam kegiatan Ruang Dialog RUPTL 2025–2034 dan Kemandirian Energi Kalimantan Barat...",
-          "Pontianak – Ketua DPD Serikat Pekerja PLN UID Kalimantan Barat, Akhmad Junaidi, menilai Rencana Usaha Penyediaan Tenaga Listrik (RUPTL) 2025–2034 perlu dikaji ulang dan direvisi...",
-          "Agustian",
-          "Kamis, 25 Juni 2026 • 22.13 WIB",
-          "SP PLN Kalimantan Barat",
-          "https://lh3.googleusercontent.com/d/1qjeWGoArNqXQprL67_XVXmbXuFx8mBOa=w1600",
-          "3 Min Read",
-          "pln"
-        );
-
-        stmt.run(
-          "SP PLN UID Kalbar dan Disnakertrans Kalbar Perkuat Sinergi Ketenagakerjaan",
-          "Audiensi bersama Kepala Dinas Tenaga Kerja dan Transmigrasi Provinsi Kalimantan Barat membahas penguatan hubungan industrial...",
-          "DPD SP PLN UID Kalimantan Barat mengadakan audiensi dengan Kepala Dinas Tenaga Kerja dan Transmigrasi Provinsi Kalimantan Barat untuk memperkuat sinergi di bidang ketenagakerjaan...",
-          "Agustian",
-          "Rabu, 3 Juni 2026 • 23.18 WIB",
-          "SP PLN Kalimantan Barat",
-          "https://lh3.googleusercontent.com/d/1D4PKpdaPJ4m_4xHvhXYwkN-5rj7WNO5W=w1600",
-          "2 Min Read",
-          "pln"
-        );
-
-        stmt.finalize();
-      }
     });
   });
 }
 
 // ==========================================
-// REST API ENDPOINTS: AUTHENTICATION (ADMINISTRATOR)
+// REST API ENDPOINTS: HEALTH CHECK (PUBLIC)
+// ==========================================
+// Endpoint public murni untuk monitoring tanpa membocorkan internal server
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'ok',
+  });
+});
+
+// ==========================================
+// REST API ENDPOINTS: AUTHENTICATION
 // ==========================================
 
-// POST /api/auth/login - Autentikasi administrator tunggal
-app.post('/api/auth/login', authRateLimiter, (req, res) => {
+// POST /api/auth/login - Autentikasi administrator tunggal dengan brute-force protection
+app.post('/api/auth/login', loginRateLimiter, (req, res) => {
   const { username, password } = req.body;
+  const clientIp = req.clientIp || req.ip || '127.0.0.1';
 
-  if (!username || !password) {
+  if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
     return res.status(400).json({
       success: false,
-      message: 'Username dan password wajib diisi',
+      message: 'Username dan password wajib diisi.',
     });
   }
 
@@ -291,11 +373,16 @@ app.post('/api/auth/login', authRateLimiter, (req, res) => {
   }
 
   if (!isUsernameMatch || !isPasswordMatch) {
+    registerFailedLogin(clientIp);
+    auditLog('LOGIN_FAILED', { ip: clientIp, username: username.trim().substring(0, 30) });
     return res.status(401).json({
       success: false,
-      message: 'Username atau password salah',
+      message: 'Username atau password salah.',
     });
   }
+
+  // Reset catatan login gagal jika berhasil
+  resetFailedLogin(clientIp);
 
   const token = crypto.randomBytes(32).toString('hex');
   activeSessions.set(token, {
@@ -303,31 +390,34 @@ app.post('/api/auth/login', authRateLimiter, (req, res) => {
     expiresAt: Date.now() + SESSION_DURATION_MS,
   });
 
+  auditLog('LOGIN_SUCCESS', { ip: clientIp, user: ADMIN_USERNAME });
+
   res.json({
     success: true,
     token,
     user: {
       username: ADMIN_USERNAME,
     },
-    message: 'Login administrator berhasil',
+    message: 'Login administrator berhasil.',
   });
 });
 
-// POST /api/auth/logout - Hapus sesi token administrator
+// POST /api/auth/logout - Hapus dan cabut sesi token administrator
 app.post('/api/auth/logout', (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim();
     activeSessions.delete(token);
+    auditLog('LOGOUT', { user: ADMIN_USERNAME });
   }
 
   res.json({
     success: true,
-    message: 'Berhasil logout',
+    message: 'Logout berhasil.',
   });
 });
 
-// GET /api/auth/me - Cek status login administrator
+// GET /api/auth/me - Cek status login administrator (Wajib Admin Auth)
 app.get('/api/auth/me', requireAdminAuth, (req, res) => {
   res.json({
     success: true,
@@ -337,14 +427,14 @@ app.get('/api/auth/me', requireAdminAuth, (req, res) => {
   });
 });
 
-// PUT /api/auth/password - Ganti password administrator tunggal
-app.put('/api/auth/password', requireAdminAuth, authRateLimiter, (req, res) => {
+// PUT /api/auth/password - Ganti password administrator tunggal (Wajib Admin Auth)
+app.put('/api/auth/password', requireAdminAuth, (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
-  if (!currentPassword || !newPassword) {
+  if (!currentPassword || !newPassword || typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
     return res.status(400).json({
       success: false,
-      message: 'Password saat ini dan password baru wajib diisi',
+      message: 'Password saat ini dan password baru wajib diisi.',
     });
   }
 
@@ -361,13 +451,14 @@ app.put('/api/auth/password', requireAdminAuth, authRateLimiter, (req, res) => {
   }
 
   if (!isCurrentMatch) {
+    auditLog('CHANGE_PASSWORD_FAILED', { reason: 'Wrong current password' });
     return res.status(400).json({
       success: false,
       message: 'Password saat ini salah.',
     });
   }
 
-  // 2. Validasi Kekuatan Password Baru di Backend
+  // 2. Validasi Kekuatan Password Baru
   const isMinLength = newPassword.length >= 10;
   const hasUpper = /[A-Z]/.test(newPassword);
   const hasLower = /[a-z]/.test(newPassword);
@@ -385,22 +476,21 @@ app.put('/api/auth/password', requireAdminAuth, authRateLimiter, (req, res) => {
   const newPasswordHash = hashPassword(newPassword, ADMIN_PASSWORD_SALT);
   targetPasswordHash = newPasswordHash;
 
-  // 4. Update SQLite database (Tabel admin_users)
+  // 4. Update SQLite database dengan prepared statement
   const now = new Date().toISOString();
   db.run(
     'UPDATE admin_users SET password_hash = ?, updated_at = ? WHERE id = 1 OR username = ?',
     [newPasswordHash, now, ADMIN_USERNAME],
     (err) => {
       if (err) {
-        console.error('❌ Gagal memperbarui password_hash di database SQLite:', err.message);
-      } else {
-        console.log('✅ Password_hash admin berhasil diperbarui di SQLite.');
+        console.error('Database update error on password:', err.message);
       }
     }
   );
 
-  // 5. Revoke / Invalidate seluruh sesi aktif (Sesi lama hangus, admin wajib login ulang)
+  // 5. Invalidate seluruh sesi aktif
   activeSessions.clear();
+  auditLog('PASSWORD_CHANGED', { user: ADMIN_USERNAME });
 
   res.json({
     success: true,
@@ -412,26 +502,26 @@ app.put('/api/auth/password', requireAdminAuth, authRateLimiter, (req, res) => {
 // REST API ENDPOINTS: ARTICLES
 // ==========================================
 
-// GET /api/articles - Ambil seluruh artikel (dengan filter opsional ?type=pln atau ?type=nasional)
+// GET /api/articles - Ambil artikel (Publik)
 app.get('/api/articles', (req, res) => {
   const { type } = req.query;
 
   let query = 'SELECT * FROM articles';
   const params = [];
 
-  if (type) {
+  if (type === 'pln' || type === 'nasional') {
     query += ' WHERE type = ?';
     params.push(type);
   }
 
-  // Urutkan ID terbesar (terbaru) di posisi paling atas
   query += ' ORDER BY id DESC';
 
   db.all(query, params, (err, rows) => {
     if (err) {
+      console.error('Database error on /api/articles:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Gagal mengambil data artikel: ' + err.message
+        message: 'Terjadi kesalahan pada server.',
       });
     }
 
@@ -442,22 +532,27 @@ app.get('/api/articles', (req, res) => {
   });
 });
 
-// GET /api/articles/:id - Ambil satu artikel berdasarkan ID
+// GET /api/articles/:id - Ambil satu artikel (Publik)
 app.get('/api/articles/:id', (req, res) => {
   const { id } = req.params;
 
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: 'ID artikel tidak valid.' });
+  }
+
   db.get('SELECT * FROM articles WHERE id = ?', [id], (err, row) => {
     if (err) {
+      console.error('Database error on /api/articles/:id:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Terjadi kesalahan database: ' + err.message
+        message: 'Terjadi kesalahan pada server.',
       });
     }
 
     if (!row) {
       return res.status(404).json({
         success: false,
-        message: `Artikel dengan ID ${id} tidak ditemukan`
+        message: 'Artikel tidak ditemukan.',
       });
     }
 
@@ -468,7 +563,7 @@ app.get('/api/articles/:id', (req, res) => {
   });
 });
 
-// POST /api/articles - Tambah artikel baru (Protected Admin)
+// POST /api/articles - Tambah artikel baru (Wajib Admin Auth)
 app.post('/api/articles', requireAdminAuth, (req, res) => {
   const {
     title,
@@ -482,16 +577,27 @@ app.post('/api/articles', requireAdminAuth, (req, res) => {
     type
   } = req.body;
 
-  if (!title || !content) {
+  if (!title || typeof title !== 'string' || !title.trim() || !content || typeof content !== 'string' || !content.trim()) {
     return res.status(400).json({
       success: false,
-      message: 'Field title dan content wajib diisi'
+      message: 'Judul dan isi artikel wajib diisi.',
+    });
+  }
+
+  if (title.length > 500) {
+    return res.status(400).json({
+      success: false,
+      message: 'Judul artikel maksimal 500 karakter.',
     });
   }
 
   const articleType = type === 'nasional' ? 'nasional' : 'pln';
-  const finalCategory = category || (articleType === 'nasional' ? 'Berita Nasional' : 'SP PLN Kalimantan Barat');
-  const finalAuthor = author || (articleType === 'nasional' ? 'Redaksi Nasional' : 'Humas SP PLN Kalbar');
+  const finalCategory = (category && typeof category === 'string') 
+    ? category.trim().substring(0, 100) 
+    : (articleType === 'nasional' ? 'Berita Nasional' : 'SP PLN Kalimantan Barat');
+  const finalAuthor = (author && typeof author === 'string') 
+    ? author.trim().substring(0, 100) 
+    : (articleType === 'nasional' ? 'Redaksi Nasional' : 'Humas SP PLN Kalbar');
 
   const query = `
     INSERT INTO articles (title, excerpt, content, author, date, category, imageUrl, readTime, type)
@@ -500,46 +606,46 @@ app.post('/api/articles', requireAdminAuth, (req, res) => {
 
   const params = [
     title.trim(),
-    excerpt ? excerpt.trim() : '',
+    excerpt && typeof excerpt === 'string' ? excerpt.trim().substring(0, 1000) : '',
     content.trim(),
-    finalAuthor.trim(),
-    date ? date.trim() : 'Hari ini',
-    finalCategory.trim(),
-    imageUrl ? imageUrl.trim() : '',
-    readTime ? readTime.trim() : '3 Min Read',
+    finalAuthor,
+    date && typeof date === 'string' ? date.trim().substring(0, 100) : 'Hari ini',
+    finalCategory,
+    imageUrl && typeof imageUrl === 'string' ? imageUrl.trim().substring(0, 1000) : '',
+    readTime && typeof readTime === 'string' ? readTime.trim().substring(0, 50) : '3 Min Read',
     articleType
   ];
 
   db.run(query, params, function (err) {
     if (err) {
+      console.error('Database insert error on /api/articles:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Gagal menyimpan artikel: ' + err.message
+        message: 'Terjadi kesalahan pada server saat menyimpan artikel.',
       });
     }
 
     const newId = this.lastID;
-    db.get('SELECT * FROM articles WHERE id = ?', [newId], (err, row) => {
-      if (err) {
-        return res.status(201).json({
-          success: true,
-          data: { id: newId, ...req.body, type: articleType },
-          message: 'Artikel berhasil disimpan'
-        });
-      }
+    auditLog('ARTICLE_CREATED', { id: newId, title: title.trim().substring(0, 40) });
 
+    db.get('SELECT * FROM articles WHERE id = ?', [newId], (fetchErr, row) => {
       res.status(201).json({
         success: true,
-        data: row,
-        message: 'Artikel berhasil ditambahkan'
+        data: row || { id: newId, title, content, type: articleType },
+        message: 'Artikel berhasil ditambahkan.',
       });
     });
   });
 });
 
-// PUT /api/articles/:id - Perbarui artikel yang ada (Protected Admin)
+// PUT /api/articles/:id - Perbarui artikel (Wajib Admin Auth)
 app.put('/api/articles/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: 'ID artikel tidak valid.' });
+  }
+
   const {
     title,
     excerpt,
@@ -554,22 +660,23 @@ app.put('/api/articles/:id', requireAdminAuth, (req, res) => {
 
   db.get('SELECT * FROM articles WHERE id = ?', [id], (err, existing) => {
     if (err) {
-      return res.status(500).json({ success: false, message: err.message });
+      console.error('Database find error on PUT /api/articles/:id:', err.message);
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
     }
     if (!existing) {
-      return res.status(404).json({ success: false, message: 'Artikel tidak ditemukan' });
+      return res.status(404).json({ success: false, message: 'Artikel tidak ditemukan.' });
     }
 
     const updated = {
-      title: title !== undefined ? title : existing.title,
-      excerpt: excerpt !== undefined ? excerpt : existing.excerpt,
-      content: content !== undefined ? content : existing.content,
-      author: author !== undefined ? author : existing.author,
-      date: date !== undefined ? date : existing.date,
-      category: category !== undefined ? category : existing.category,
-      imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
-      readTime: readTime !== undefined ? readTime : existing.readTime,
-      type: type !== undefined ? type : existing.type
+      title: title !== undefined && typeof title === 'string' ? title.trim().substring(0, 500) : existing.title,
+      excerpt: excerpt !== undefined && typeof excerpt === 'string' ? excerpt.trim().substring(0, 1000) : existing.excerpt,
+      content: content !== undefined && typeof content === 'string' ? content.trim() : existing.content,
+      author: author !== undefined && typeof author === 'string' ? author.trim().substring(0, 100) : existing.author,
+      date: date !== undefined && typeof date === 'string' ? date.trim().substring(0, 100) : existing.date,
+      category: category !== undefined && typeof category === 'string' ? category.trim().substring(0, 100) : existing.category,
+      imageUrl: imageUrl !== undefined && typeof imageUrl === 'string' ? imageUrl.trim().substring(0, 1000) : existing.imageUrl,
+      readTime: readTime !== undefined && typeof readTime === 'string' ? readTime.trim().substring(0, 50) : existing.readTime,
+      type: type === 'nasional' || type === 'pln' ? type : existing.type
     };
 
     const query = `
@@ -591,44 +698,54 @@ app.put('/api/articles/:id', requireAdminAuth, (req, res) => {
       id
     ];
 
-    db.run(query, params, function (err) {
-      if (err) {
-        return res.status(500).json({ success: false, message: 'Gagal memperbarui artikel: ' + err.message });
+    db.run(query, params, function (updateErr) {
+      if (updateErr) {
+        console.error('Database update error on /api/articles/:id:', updateErr.message);
+        return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server saat memperbarui artikel.' });
       }
 
-      db.get('SELECT * FROM articles WHERE id = ?', [id], (err, row) => {
+      auditLog('ARTICLE_UPDATED', { id });
+
+      db.get('SELECT * FROM articles WHERE id = ?', [id], (fetchErr, row) => {
         res.json({
           success: true,
           data: row,
-          message: 'Artikel berhasil diperbarui'
+          message: 'Artikel berhasil diperbarui.',
         });
       });
     });
   });
 });
 
-// DELETE /api/articles/:id - Hapus artikel (Protected Admin)
+// DELETE /api/articles/:id - Hapus artikel (Wajib Admin Auth)
 app.delete('/api/articles/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
 
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: 'ID artikel tidak valid.' });
+  }
+
   db.run('DELETE FROM articles WHERE id = ?', [id], function (err) {
     if (err) {
+      console.error('Database delete error on /api/articles/:id:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Gagal menghapus artikel: ' + err.message
+        message: 'Terjadi kesalahan pada server saat menghapus artikel.',
       });
     }
 
     if (this.changes === 0) {
       return res.status(404).json({
         success: false,
-        message: `Artikel dengan ID ${id} tidak ditemukan`
+        message: 'Artikel tidak ditemukan.',
       });
     }
 
+    auditLog('ARTICLE_DELETED', { id });
+
     res.json({
       success: true,
-      message: 'Artikel berhasil dihapus'
+      message: 'Artikel berhasil dihapus.',
     });
   });
 });
@@ -637,13 +754,14 @@ app.delete('/api/articles/:id', requireAdminAuth, (req, res) => {
 // REST API ENDPOINTS: PHOTOS / GALLERY
 // ==========================================
 
-// GET /api/photos - Ambil seluruh foto kegiatan
+// GET /api/photos - Ambil foto kegiatan (Publik)
 app.get('/api/photos', (req, res) => {
   db.all('SELECT * FROM photos ORDER BY id DESC', [], (err, rows) => {
     if (err) {
+      console.error('Database error on /api/photos:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Gagal mengambil data foto: ' + err.message
+        message: 'Terjadi kesalahan pada server saat mengambil foto.',
       });
     }
 
@@ -654,16 +772,21 @@ app.get('/api/photos', (req, res) => {
   });
 });
 
-// GET /api/photos/:id - Ambil satu foto berdasarkan ID
+// GET /api/photos/:id - Ambil satu foto (Publik)
 app.get('/api/photos/:id', (req, res) => {
   const { id } = req.params;
 
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: 'ID foto tidak valid.' });
+  }
+
   db.get('SELECT * FROM photos WHERE id = ?', [id], (err, row) => {
     if (err) {
-      return res.status(500).json({ success: false, message: err.message });
+      console.error('Database error on /api/photos/:id:', err.message);
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
     }
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Foto tidak ditemukan' });
+      return res.status(404).json({ success: false, message: 'Foto tidak ditemukan.' });
     }
 
     res.json({
@@ -673,14 +796,14 @@ app.get('/api/photos/:id', (req, res) => {
   });
 });
 
-// POST /api/photos - Tambah foto kegiatan baru (Protected Admin)
+// POST /api/photos - Tambah foto kegiatan (Wajib Admin Auth)
 app.post('/api/photos', requireAdminAuth, (req, res) => {
   const { title, description, date, imageUrl, location } = req.body;
 
-  if (!title || !imageUrl) {
+  if (!title || typeof title !== 'string' || !title.trim() || !imageUrl || typeof imageUrl !== 'string' || !imageUrl.trim()) {
     return res.status(400).json({
       success: false,
-      message: 'Field title dan imageUrl wajib diisi'
+      message: 'Judul dan URL foto wajib diisi.',
     });
   }
 
@@ -690,47 +813,60 @@ app.post('/api/photos', requireAdminAuth, (req, res) => {
   `;
 
   const params = [
-    title.trim(),
-    description ? description.trim() : '',
-    date ? date.trim() : 'Dokumentasi Terkini',
-    imageUrl.trim(),
-    location ? location.trim() : 'Kalimantan Barat'
+    title.trim().substring(0, 500),
+    description && typeof description === 'string' ? description.trim().substring(0, 1000) : '',
+    date && typeof date === 'string' ? date.trim().substring(0, 100) : 'Dokumentasi Terkini',
+    imageUrl.trim().substring(0, 1000),
+    location && typeof location === 'string' ? location.trim().substring(0, 200) : 'Kalimantan Barat'
   ];
 
   db.run(query, params, function (err) {
     if (err) {
+      console.error('Database insert error on /api/photos:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Gagal menyimpan foto: ' + err.message
+        message: 'Terjadi kesalahan pada server saat menyimpan foto.',
       });
     }
 
     const newId = this.lastID;
-    db.get('SELECT * FROM photos WHERE id = ?', [newId], (err, row) => {
+    auditLog('PHOTO_CREATED', { id: newId, title: title.trim().substring(0, 40) });
+
+    db.get('SELECT * FROM photos WHERE id = ?', [newId], (fetchErr, row) => {
       res.status(201).json({
         success: true,
-        data: row || { id: newId, ...req.body },
-        message: 'Foto kegiatan berhasil ditambahkan'
+        data: row || { id: newId, title, imageUrl },
+        message: 'Foto kegiatan berhasil ditambahkan.',
       });
     });
   });
 });
 
-// PUT /api/photos/:id - Perbarui foto (Protected Admin)
+// PUT /api/photos/:id - Perbarui foto (Wajib Admin Auth)
 app.put('/api/photos/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: 'ID foto tidak valid.' });
+  }
+
   const { title, description, date, imageUrl, location } = req.body;
 
   db.get('SELECT * FROM photos WHERE id = ?', [id], (err, existing) => {
-    if (err) return res.status(500).json({ success: false, message: err.message });
-    if (!existing) return res.status(404).json({ success: false, message: 'Foto tidak ditemukan' });
+    if (err) {
+      console.error('Database find error on PUT /api/photos/:id:', err.message);
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
+    }
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Foto tidak ditemukan.' });
+    }
 
     const updated = {
-      title: title !== undefined ? title : existing.title,
-      description: description !== undefined ? description : existing.description,
-      date: date !== undefined ? date : existing.date,
-      imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
-      location: location !== undefined ? location : existing.location
+      title: title !== undefined && typeof title === 'string' ? title.trim().substring(0, 500) : existing.title,
+      description: description !== undefined && typeof description === 'string' ? description.trim().substring(0, 1000) : existing.description,
+      date: date !== undefined && typeof date === 'string' ? date.trim().substring(0, 100) : existing.date,
+      imageUrl: imageUrl !== undefined && typeof imageUrl === 'string' ? imageUrl.trim().substring(0, 1000) : existing.imageUrl,
+      location: location !== undefined && typeof location === 'string' ? location.trim().substring(0, 200) : existing.location
     };
 
     const query = `
@@ -739,86 +875,91 @@ app.put('/api/photos/:id', requireAdminAuth, (req, res) => {
       WHERE id = ?
     `;
 
-    db.run(query, [updated.title, updated.description, updated.date, updated.imageUrl, updated.location, id], function (err) {
-      if (err) return res.status(500).json({ success: false, message: err.message });
+    db.run(query, [updated.title, updated.description, updated.date, updated.imageUrl, updated.location, id], function (updateErr) {
+      if (updateErr) {
+        console.error('Database update error on /api/photos/:id:', updateErr.message);
+        return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server saat memperbarui foto.' });
+      }
 
-      db.get('SELECT * FROM photos WHERE id = ?', [id], (err, row) => {
+      auditLog('PHOTO_UPDATED', { id });
+
+      db.get('SELECT * FROM photos WHERE id = ?', [id], (fetchErr, row) => {
         res.json({
           success: true,
           data: row,
-          message: 'Foto kegiatan berhasil diperbarui'
+          message: 'Foto kegiatan berhasil diperbarui.',
         });
       });
     });
   });
 });
 
-// DELETE /api/photos/:id - Hapus foto kegiatan (Protected Admin)
+// DELETE /api/photos/:id - Hapus foto (Wajib Admin Auth)
 app.delete('/api/photos/:id', requireAdminAuth, (req, res) => {
   const { id } = req.params;
 
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: 'ID foto tidak valid.' });
+  }
+
   db.run('DELETE FROM photos WHERE id = ?', [id], function (err) {
     if (err) {
+      console.error('Database delete error on /api/photos/:id:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Gagal menghapus foto: ' + err.message
+        message: 'Terjadi kesalahan pada server saat menghapus foto.',
       });
     }
 
     if (this.changes === 0) {
       return res.status(404).json({
         success: false,
-        message: `Foto dengan ID ${id} tidak ditemukan`
+        message: 'Foto tidak ditemukan.',
       });
     }
 
+    auditLog('PHOTO_DELETED', { id });
+
     res.json({
       success: true,
-      message: 'Foto berhasil dihapus'
+      message: 'Foto berhasil dihapus.',
     });
   });
 });
 
 // ==========================================
-// REST API ENDPOINTS: SECURE IMAGE UPLOAD
+// REST API ENDPOINTS: UPLOAD (ADMIN ONLY)
 // ==========================================
 app.post('/api/upload', requireAdminAuth, (req, res) => {
   upload.single('image')(req, res, (err) => {
-    if (err) {
+    if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
           success: false,
-          message: 'Ukuran gambar maksimal 10 MB.'
+          message: 'Ukuran file gambar melebihi batas maksimal 10 MB.'
         });
       }
       return res.status(400).json({
         success: false,
-        message: err.message || 'Format gambar tidak didukung. Gunakan JPG, PNG, atau WebP.'
+        message: 'Gagal memproses file upload.'
+      });
+    } else if (err) {
+      return res.status(400).json({
+        success: false,
+        message: 'Format file tidak didukung. Gunakan JPG, PNG, atau WebP.'
       });
     }
 
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({
         success: false,
-        message: 'Tidak ada file gambar yang diunggah.'
+        message: 'File gambar wajib disertakan.'
       });
     }
 
     const fileBuffer = req.file.buffer;
-    const fileSize = fileBuffer.length;
+    const fileSize = req.file.size;
 
-    // 1. Validasi ukuran maksimal 10 MB
-    if (fileSize > 10 * 1024 * 1024) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ukuran gambar maksimal 10 MB.'
-      });
-    }
-
-    // 2. Validasi Magic Bytes / Signature file secara ketat
-    // - JPEG: FF D8 FF
-    // - PNG: 89 50 4E 47 0D 0A 1A 0A
-    // - WebP: RIFF (52 49 46 46) di awal dan WEBP (57 45 42 50) di offset 8
     let detectedType = null;
     let fileExt = '';
 
@@ -860,20 +1001,20 @@ app.post('/api/upload', requireAdminAuth, (req, res) => {
       });
     }
 
-    // 3. Generate nama file aman sendiri oleh server (tidak menggunakan filename asli pengguna)
     const randomName = crypto.randomBytes(16).toString('hex');
     const safeFilename = `${randomName}${fileExt}`;
     const targetPath = path.join(UPLOADS_DIR, safeFilename);
 
-    // 4. Simpan file ke server
     fs.writeFile(targetPath, fileBuffer, (writeErr) => {
       if (writeErr) {
+        console.error('File write error on upload:', writeErr.message);
         return res.status(500).json({
           success: false,
           message: 'Gagal menyimpan file gambar ke server.'
         });
       }
 
+      auditLog('IMAGE_UPLOADED', { filename: safeFilename, size: fileSize, mime: detectedType });
       const fileUrl = `/uploads/${safeFilename}`;
 
       res.json({
@@ -890,30 +1031,26 @@ app.post('/api/upload', requireAdminAuth, (req, res) => {
   });
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    database: 'sqlite',
-    time: new Date().toISOString()
-  });
-});
+// ==========================================
+// REST API ENDPOINTS: SETTINGS
+// ==========================================
 
-// Get settings endpoint
+// GET /api/settings - Ambil pengaturan publik (Profil & Footer, tanpa membocorkan api_url)
 app.get('/api/settings', (req, res) => {
-  db.all('SELECT key, value FROM settings', (err, rows) => {
+  db.all("SELECT key, value FROM settings WHERE key != 'api_url'", (err, rows) => {
     if (err) {
-      return res.status(500).json({ success: false, message: err.message });
+      console.error('Database error on GET /api/settings:', err.message);
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
     }
     const settingsObj = {};
-    rows.forEach(r => {
+    (rows || []).forEach(r => {
       settingsObj[r.key] = r.value;
     });
     res.json({ success: true, data: settingsObj });
   });
 });
 
-// Update settings endpoint (Admin only)
+// PUT /api/settings - Perbarui pengaturan Profil & Footer (Wajib Admin Auth)
 app.put('/api/settings', requireAdminAuth, (req, res) => {
   const newSettings = req.body;
   if (!newSettings || typeof newSettings !== 'object') {
@@ -924,21 +1061,116 @@ app.put('/api/settings', requireAdminAuth, (req, res) => {
     db.run('BEGIN TRANSACTION');
     const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     for (const [k, v] of Object.entries(newSettings)) {
-      stmt.run(k, String(v !== undefined && v !== null ? v : ''));
+      if (k !== 'api_url') {
+        stmt.run(k, String(v !== undefined && v !== null ? v : ''));
+      }
     }
     stmt.finalize();
     db.run('COMMIT', (err) => {
       if (err) {
-        return res.status(500).json({ success: false, message: err.message });
+        console.error('Database commit error on /api/settings:', err.message);
+        return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server saat memperbarui pengaturan.' });
       }
+      auditLog('SETTINGS_UPDATED', { user: ADMIN_USERNAME });
       res.json({ success: true, message: 'Pengaturan berhasil diperbarui.' });
     });
   });
 });
 
+// GET /api/settings/api - Ambil konfigurasi URL API (WAJIB Admin Auth)
+app.get('/api/settings/api', requireAdminAuth, (req, res) => {
+  db.get("SELECT value FROM settings WHERE key = 'api_url'", (err, row) => {
+    if (err) {
+      console.error('Database error on GET /api/settings/api:', err.message);
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
+    }
+    res.json({
+      success: true,
+      data: {
+        apiUrl: row ? row.value : null
+      }
+    });
+  });
+});
+
+// PUT /api/settings/api - Perbarui konfigurasi URL API (WAJIB Admin Auth)
+app.put('/api/settings/api', requireAdminAuth, (req, res) => {
+  const { apiUrl } = req.body;
+  if (!apiUrl || typeof apiUrl !== 'string') {
+    return res.status(400).json({
+      success: false,
+      message: 'URL API tidak boleh kosong.'
+    });
+  }
+
+  const trimmed = apiUrl.trim();
+
+  if (trimmed.length > 500) {
+    return res.status(400).json({
+      success: false,
+      message: 'URL maksimal 500 karakter.'
+    });
+  }
+
+  if (/^(javascript|data|file|ftp|vbscript):/i.test(trimmed)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Protokol URL tidak diizinkan.'
+    });
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return res.status(400).json({
+      success: false,
+      message: 'URL harus dimulai dengan http:// atau https://'
+    });
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return res.status(400).json({
+        success: false,
+        message: 'Hanya protokol HTTP dan HTTPS yang diizinkan.'
+      });
+    }
+
+    if (parsed.username || parsed.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'URL tidak boleh menyertakan kredensial (username/password).'
+      });
+    }
+
+    const cleanUrl = `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, '');
+
+    db.run(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('api_url', ?)",
+      [cleanUrl],
+      function (err) {
+        if (err) {
+          console.error('Database error on PUT /api/settings/api:', err.message);
+          return res.status(500).json({
+            success: false,
+            message: 'Terjadi kesalahan pada server saat menyimpan URL API.'
+          });
+        }
+        auditLog('API_URL_UPDATED', { user: ADMIN_USERNAME });
+        res.json({
+          success: true,
+          data: { apiUrl: cleanUrl },
+          message: 'URL API berhasil diperbarui.'
+        });
+      }
+    );
+  } catch {
+    return res.status(400).json({
+      success: false,
+      message: 'Format URL API tidak valid.'
+    });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 REST API Backend Berita SP PLN Kalbar berjalan di http://0.0.0.0:${PORT}`);
-  console.log(`📡 Endpoint Artikel: http://localhost:${PORT}/api/articles`);
-  console.log(`📡 Endpoint Galeri: http://localhost:${PORT}/api/photos`);
-  console.log(`🔐 Endpoint Autentikasi: http://localhost:${PORT}/api/auth/login`);
+  console.log(`🚀 REST API Backend Berita SP PLN Kalbar berjalan di port ${PORT}`);
 });

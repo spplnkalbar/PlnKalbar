@@ -9,14 +9,19 @@ import { plnArticles as initialPlnArticles, nasionalArticles as initialNasionalA
 import type { Article, ActivityPhoto } from './data';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLoginModal } from './components/AdminLoginModal';
-import { apiService } from './services/api';
+import { SpPlnLogo } from './components/SpPlnLogo';
+import { apiService, getApiBaseUrl } from './services/api';
 import { authService, AuthUser } from './services/auth';
 
-// Helper to convert any Google Drive URL format into direct high-resolution image stream
+// Helper to convert any Google Drive URL format into direct high-resolution image stream and resolve local uploads
 function formatDriveImageUrl(rawUrl: string | undefined | null): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
   const trimmed = rawUrl.trim();
   if (!trimmed) return '';
+
+  if (trimmed.startsWith('/uploads/')) {
+    return `${getApiBaseUrl()}${trimmed}`;
+  }
 
   // 1. Google Drive file URL format: /file/d/FILE_ID/...
   const fileDMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/i);
@@ -345,6 +350,18 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loadData]);
 
+  // Tangani pembaruan dinamis URL API dari Admin Panel / Connection Modal
+  useEffect(() => {
+    const handleApiUrlChanged = () => {
+      loadData();
+      loadSettings();
+      apiService.checkHealth().then(healthy => setIsApiConnected(healthy));
+    };
+
+    window.addEventListener('sp_pln_api_url_changed', handleApiUrlChanged);
+    return () => window.removeEventListener('sp_pln_api_url_changed', handleApiUrlChanged);
+  }, [loadData, loadSettings]);
+
 
   useEffect(() => {
     const handleScroll = () => {
@@ -560,11 +577,9 @@ export default function App() {
             }}
             className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0"
           >
-            <img 
-              src="https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000" 
-              alt="Logo SP PLN" 
-              className="object-contain hover:scale-105 transition-all duration-300 drop-shadow-sm h-[52px] w-[50px] sm:h-[64px] sm:w-[61px] md:h-[74px] md:w-[71px] mb-3 sm:mb-5 md:mb-[27px]" 
-              referrerPolicy="no-referrer"
+            <SpPlnLogo 
+              size="sm"
+              className="hover:scale-105 transition-all duration-300 drop-shadow-sm mb-3 sm:mb-5 md:mb-[27px]" 
             />
           </div>
           <div 
@@ -1543,16 +1558,11 @@ export default function App() {
               style={{ borderRadius: '24px' }}
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-stone-200 bg-stone-50">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <h2 className="text-xl md:text-2xl font-serif font-black text-stone-900">{settings.profile_title || "Profil Serikat Pekerja"}</h2>
-                    <p className="text-xs text-stone-500 font-sans font-medium">{settings.profile_subtitle || "SP PLN Unit Induk Distribusi Kalimantan Barat"}</p>
-                  </div>
-                </div>
+              <div className="flex items-center justify-end p-4 sm:p-5 border-b border-stone-100 bg-stone-50/70">
                 <button
                   onClick={() => setIsProfileOpen(false)}
-                  className="p-2 hover:bg-stone-100 text-stone-400 hover:text-stone-700 rounded-full transition-colors cursor-pointer"
+                  className="p-2 hover:bg-stone-200/60 text-stone-400 hover:text-stone-700 rounded-full transition-colors cursor-pointer"
+                  title="Tutup Modal"
                 >
                   <X size={20} />
                 </button>
@@ -1562,12 +1572,9 @@ export default function App() {
               <div className="overflow-y-auto flex-1 p-6 md:p-8 bg-stone-50/50">
                 <div className="prose prose-stone max-w-none font-sans text-stone-800 leading-relaxed">
                   <div className="flex justify-center mb-6">
-                    <img
-                      src="https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000"
-                      alt="Logo SP PLN"
-                      className="object-contain"
-                      style={{ height: '250px', width: '200px' }}
-                      referrerPolicy="no-referrer"
+                    <SpPlnLogo
+                      size="lg"
+                      className="mx-auto drop-shadow-md"
                     />
                   </div>
                   

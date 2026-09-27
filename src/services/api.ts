@@ -1,8 +1,17 @@
 import type { Article, ActivityPhoto } from '../data';
-import { API_BASE_URL, API_ENDPOINTS } from '../config/api';
+import { 
+  getApiBaseUrl, 
+  setApiBaseUrl, 
+  API_BASE_URL, 
+  API_ENDPOINTS, 
+  checkApiHealth, 
+  validateApiUrl,
+  ApiHealthResponse 
+} from '../config/api';
 import { authService } from './auth';
 
-export { API_BASE_URL, API_ENDPOINTS };
+export { getApiBaseUrl, setApiBaseUrl, API_BASE_URL, API_ENDPOINTS, checkApiHealth, validateApiUrl };
+export type { ApiHealthResponse };
 
 function getAuthHeaders(): Record<string, string> {
   const token = authService.getToken();
@@ -45,6 +54,17 @@ export interface CreatePhotoPayload {
   location: string;
 }
 
+export function resolveImageUrl(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    return 'https://lh3.googleusercontent.com/d/1NcadbSCAmRCiE3RLjXcEy3cEj3_Hul6M=w1000';
+  }
+  const trimmed = url.trim();
+  if (trimmed.startsWith('/uploads/')) {
+    return `${getApiBaseUrl()}${trimmed}`;
+  }
+  return trimmed;
+}
+
 // Convert SQLite numeric/string ID into standard string format for UI compatibility
 function normalizeArticle(item: any): Article {
   return {
@@ -55,7 +75,7 @@ function normalizeArticle(item: any): Article {
     author: item.author || 'Humas SP PLN Kalbar',
     date: item.date || '',
     category: item.category || (item.type === 'nasional' ? 'Berita Nasional' : 'SP PLN Kalimantan Barat'),
-    imageUrl: item.imageUrl || '',
+    imageUrl: resolveImageUrl(item.imageUrl),
     readTime: item.readTime || '3 Min Read',
     type: item.type === 'nasional' ? 'nasional' : 'pln',
   };
@@ -67,32 +87,30 @@ function normalizePhoto(item: any): ActivityPhoto {
     title: item.title || '',
     description: item.description || '',
     date: item.date || '',
-    imageUrl: item.imageUrl || '',
+    imageUrl: resolveImageUrl(item.imageUrl),
     location: item.location || 'Kalimantan Barat',
   };
 }
 
-// REST API Service communicating with Node.js/Express + SQLite backend
+// REST API Service communicating with Node.js/Express + SQLite backend (Termux / Cloudflare Tunnel)
 export const apiService = {
-  // Check backend health/connectivity
-  async checkHealth(): Promise<boolean> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/articles?limit=1`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(3500),
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
+  // Check backend health/connectivity via active API_BASE_URL
+  async checkHealth(targetUrl?: string): Promise<boolean> {
+    const result = await checkApiHealth(targetUrl || getApiBaseUrl());
+    return result.connected;
+  },
+
+  // Detailed health check test
+  async testHealth(targetUrl?: string): Promise<ApiHealthResponse> {
+    return checkApiHealth(targetUrl || getApiBaseUrl());
   },
 
   // 1. ARTICLES ENDPOINTS
   async getArticles(type?: 'pln' | 'nasional'): Promise<Article[]> {
+    const baseUrl = getApiBaseUrl();
     const url = type 
-      ? `${API_BASE_URL}/api/articles?type=${encodeURIComponent(type)}` 
-      : `${API_BASE_URL}/api/articles`;
+      ? `${baseUrl}/api/articles?type=${encodeURIComponent(type)}` 
+      : `${baseUrl}/api/articles`;
 
     const res = await fetch(url, {
       method: 'GET',
@@ -113,7 +131,8 @@ export const apiService = {
   },
 
   async getArticleById(id: string | number): Promise<Article> {
-    const res = await fetch(`${API_BASE_URL}/api/articles/${id}`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/articles/${id}`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(6000),
@@ -132,7 +151,8 @@ export const apiService = {
   },
 
   async createArticle(payload: CreateArticlePayload): Promise<Article> {
-    const res = await fetch(`${API_BASE_URL}/api/articles`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/articles`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -161,7 +181,8 @@ export const apiService = {
   },
 
   async updateArticle(id: string | number, payload: Partial<CreateArticlePayload>): Promise<Article> {
-    const res = await fetch(`${API_BASE_URL}/api/articles/${id}`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/articles/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -187,7 +208,8 @@ export const apiService = {
   },
 
   async deleteArticle(id: string | number): Promise<boolean> {
-    const res = await fetch(`${API_BASE_URL}/api/articles/${id}`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/articles/${id}`, {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
@@ -208,7 +230,8 @@ export const apiService = {
 
   // 2. PHOTOS / GALLERY ENDPOINTS
   async getPhotos(): Promise<ActivityPhoto[]> {
-    const res = await fetch(`${API_BASE_URL}/api/photos`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/photos`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(6000),
@@ -227,7 +250,8 @@ export const apiService = {
   },
 
   async getPhotoById(id: string | number): Promise<ActivityPhoto> {
-    const res = await fetch(`${API_BASE_URL}/api/photos/${id}`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/photos/${id}`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(6000),
@@ -246,7 +270,8 @@ export const apiService = {
   },
 
   async createPhoto(payload: CreatePhotoPayload): Promise<ActivityPhoto> {
-    const res = await fetch(`${API_BASE_URL}/api/photos`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/photos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -272,7 +297,8 @@ export const apiService = {
   },
 
   async updatePhoto(id: string | number, payload: Partial<CreatePhotoPayload>): Promise<ActivityPhoto> {
-    const res = await fetch(`${API_BASE_URL}/api/photos/${id}`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/photos/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -298,7 +324,8 @@ export const apiService = {
   },
 
   async deletePhoto(id: string | number): Promise<boolean> {
-    const res = await fetch(`${API_BASE_URL}/api/photos/${id}`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/photos/${id}`, {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
@@ -318,10 +345,11 @@ export const apiService = {
   },
 
   async uploadImage(file: File): Promise<string> {
+    const baseUrl = getApiBaseUrl();
     const formData = new FormData();
     formData.append('image', file);
 
-    const res = await fetch(`${API_BASE_URL}/api/upload`, {
+    const res = await fetch(`${baseUrl}/api/upload`, {
       method: 'POST',
       headers: {
         ...getAuthHeaders(),
@@ -344,8 +372,10 @@ export const apiService = {
     return json.data.url;
   },
 
+  // 3. SETTINGS ENDPOINTS
   async getSettings(): Promise<Record<string, string>> {
-    const res = await fetch(`${API_BASE_URL}/api/settings`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/settings`, {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(8000),
     });
@@ -355,7 +385,8 @@ export const apiService = {
   },
 
   async updateSettings(settings: Record<string, string>): Promise<boolean> {
-    const res = await fetch(`${API_BASE_URL}/api/settings`, {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/settings`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -372,5 +403,47 @@ export const apiService = {
     }
     const json: ApiResponse<null> = await res.json();
     return Boolean(json.success);
+  },
+
+  // 4. API SERVER URL SETTINGS ENDPOINTS (GET /api/settings/api & PUT /api/settings/api)
+  async getApiUrlSetting(): Promise<string | null> {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/settings/api`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const json: ApiResponse<{ apiUrl?: string }> = await res.json();
+      return json.data?.apiUrl || null;
+    } catch {
+      return null;
+    }
+  },
+
+  async updateApiUrlSetting(newApiUrl: string): Promise<boolean> {
+    try {
+      const validated = validateApiUrl(newApiUrl);
+      if (!validated.valid || !validated.formattedUrl) {
+        throw new Error(validated.error || 'Format URL tidak valid');
+      }
+
+      // 1. Simpan ke backend baru jika sudah bisa dijangkau
+      const res = await fetch(`${validated.formattedUrl}/api/settings/api`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ apiUrl: validated.formattedUrl }),
+        signal: AbortSignal.timeout(6000),
+      }).catch(() => null);
+
+      // Note: Even if backend PUT fails (e.g. not authenticated yet), the frontend URL will be saved locally
+      return res ? res.ok : false;
+    } catch {
+      return false;
+    }
   },
 };
