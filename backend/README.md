@@ -27,14 +27,19 @@ cp .env.example .env
 Contoh konfigurasi:
 ```env
 PORT=3000
-DB_PATH=./database.sqlite
+DB_PATH=./berita.db
 
-# Kredensial Administrator Tunggal
-ADMIN_USERNAME=sppln
-ADMIN_PASSWORD=ContohPasswordKuat2026!
+# Salt rahasia untuk verifikasi PBKDF2
 ADMIN_PASSWORD_SALT=sp_pln_uid_kalbar_salt_2026
 SESSION_SECRET=sp_pln_uid_kalbar_session_secret_key_2026
 ```
+
+### 🔑 Manajemen Password Administrator
+Untuk memperbarui password administrator akun existing (`sppln`) secara langsung ke database `berita.db` dengan algoritma PBKDF2 (SHA-512, 100.000 iterasi):
+```bash
+node update_admin_password.js
+```
+Script ini akan memverifikasi integritas database, memastikan jumlah admin tetap 1, dan memastikan tidak ada data artikel/foto yang terhapus.
 
 ---
 

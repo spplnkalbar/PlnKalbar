@@ -8,7 +8,36 @@ const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'database.sqlite');
+
+// Resolusi path database SQLite existing:
+// 1. Jika ada variabel lingkungan DB_PATH, gunakan nilai tersebut.
+// 2. Jika ada file berita.db di direktori backend atau direktori kerja, gunakan berita.db.
+// 3. Jika ada file database.sqlite di direktori backend atau direktori kerja, gunakan database.sqlite.
+// 4. Default utama adalah berita.db (jangan membuat database kedua jika berita.db digunakan).
+function resolveDatabasePath() {
+  if (process.env.DB_PATH) {
+    return path.isAbsolute(process.env.DB_PATH)
+      ? process.env.DB_PATH
+      : path.resolve(process.cwd(), process.env.DB_PATH);
+  }
+
+  const candidates = [
+    path.join(__dirname, 'berita.db'),
+    path.join(process.cwd(), 'berita.db'),
+    path.join(__dirname, 'database.sqlite'),
+    path.join(process.cwd(), 'database.sqlite'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return path.join(__dirname, 'berita.db');
+}
+
+const DB_PATH = resolveDatabasePath();
 
 // Muat konfigurasi dari file .env jika tersedia di folder backend
 try {
@@ -56,9 +85,59 @@ function auditLog(action, details = {}) {
 // ==========================================
 // 2. KONFIGURASI AUTENTIKASI ADMINISTRATOR TUNGGAL
 // ==========================================
-const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'sppln').trim();
+// Catatan: Akun administrator yang tersimpan di tabel admin_users SQLite
+// adalah SATU-SATUNYA SUMBER KEBENARAN. Server TIDAK menggunakan hardcoded username/password.
 const ADMIN_PASSWORD_SALT = process.env.ADMIN_PASSWORD_SALT || 'sp_pln_uid_kalbar_salt_2026';
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000; // 24 jam
+
+// Deteksi format hash password di SQLite (tanpa membocorkan isi hash)
+function detectHashFormat(storedHash) {
+  if (!storedHash || typeof storedHash !== 'string') {
+    return { type: 'invalid', description: 'Kosong atau bukan string' };
+  }
+  // Format 1: salt:derivedKey (PBKDF2-SHA512 dengan salt acak unik per password)
+  if (storedHash.includes(':')) {
+    const parts = storedHash.split(':');
+    if (parts.length === 2 && /^[a-f0-9]{128}$/i.test(parts[1])) {
+      return { 
+        type: 'pbkdf2_salted', 
+        description: `PBKDF2-SHA512 (salt unik ${parts[0].length} karakter, 100.000 iterasi, key 128 hex)` 
+      };
+    }
+  }
+  // Format 2: raw 128 hex chars (PBKDF2-SHA512 dengan ADMIN_PASSWORD_SALT)
+  if (/^[a-f0-9]{128}$/i.test(storedHash)) {
+    return { 
+      type: 'pbkdf2_raw128', 
+      description: 'PBKDF2-SHA512 (raw 128 hex characters, 100.000 iterasi)' 
+    };
+  }
+  // Format 3: scrypt legacy
+  if (storedHash.startsWith('$scrypt$')) {
+    return { 
+      type: 'scrypt', 
+      description: 'scrypt format ($scrypt$...)' 
+    };
+  }
+  // Format 4: bcrypt
+  if (/^\$2[aby]?\$\d{2}\$/.test(storedHash)) {
+    return { 
+      type: 'bcrypt', 
+      description: 'bcrypt format' 
+    };
+  }
+  // Format 5: SHA-256 raw 64 hex
+  if (/^[a-f0-9]{64}$/i.test(storedHash)) {
+    return { 
+      type: 'sha256', 
+      description: 'SHA-256 raw (64 hex characters)' 
+    };
+  }
+  return { 
+    type: 'unknown', 
+    description: `Format tidak dikenal (${storedHash.length} karakter)` 
+  };
+}
 
 // Fungsi utilitas hash password menggunakan PBKDF2 (SHA-512 dengan 100.000 iterasi)
 function hashWithPbkdf2(plainText, salt) {
@@ -121,18 +200,8 @@ function validatePasswordStrength(password) {
   return isMinLength && hasUpper && hasLower && hasNumber && hasSpecial;
 }
 
-// Password default inisialisasi yang memenuhi seluruh kriteria keamanan
-const defaultInitialPassword = 'SPpln@Kalbar2026';
-const initialPassword = process.env.ADMIN_PASSWORD || defaultInitialPassword;
-
-// Target hash password admin dari env (atau hash default jika env belum disetel)
-let targetPasswordHash = process.env.ADMIN_PASSWORD_HASH;
-if (!targetPasswordHash) {
-  targetPasswordHash = hashPassword(initialPassword);
-}
-
 // In-memory token storage untuk sesi aktif
-const activeSessions = new Map(); // token => { username, expiresAt }
+const activeSessions = new Map(); // token => { userId, username, expiresAt }
 
 // Rate Limiter khusus untuk mencegah brute-force login
 const loginAttemptsMap = new Map(); // ip => { count, resetTime }
@@ -385,7 +454,7 @@ function initDatabase() {
       });
     });
 
-    // 4. Table Admin Users (Satu akun administrator tunggal)
+    // 4. Tabel Admin Users (Akun administrator tersimpan di SQLite sebagai satu-satunya sumber kebenaran)
     db.run(`
       CREATE TABLE IF NOT EXISTS admin_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -395,79 +464,42 @@ function initDatabase() {
         updated_at TEXT NOT NULL
       )
     `, () => {
-      db.all('SELECT * FROM admin_users ORDER BY id ASC', (err, rows) => {
-        const now = new Date().toISOString();
+      // Baca akun admin yang SUDAH ADA di SQLite sebagai SATU-SATUNYA SUMBER KEBENARAN
+      db.all('SELECT id, username, password_hash, created_at, updated_at FROM admin_users ORDER BY id ASC', (err, rows) => {
         if (err) {
-          console.error('❌ Gagal memeriksa tabel admin_users di SQLite:', err.message);
+          console.error('❌ [DATABASE] Gagal membaca tabel admin_users di SQLite:', err.message);
           return;
         }
 
-        if (!rows || rows.length === 0) {
-          // Inisialisasi akun administrator tunggal baru dengan PBKDF2
-          const newHash = hashPassword(initialPassword);
-          targetPasswordHash = newHash;
-          db.run(
-            'INSERT INTO admin_users (id, username, password_hash, created_at, updated_at) VALUES (1, ?, ?, ?, ?)',
-            [ADMIN_USERNAME, newHash, now, now],
-            (insertErr) => {
-              if (insertErr) {
-                console.error('❌ Gagal inisialisasi akun admin:', insertErr.message);
-              } else {
-                console.log(`✅ Akun administrator tunggal (${ADMIN_USERNAME}) berhasil diinisialisasi dengan PBKDF2.`);
-              }
-            }
-          );
-        } else {
-          // Akun admin sudah ada
-          const adminRow = rows[0];
-          let needsUpdate = false;
-          let updatedUsername = adminRow.username;
-          let updatedHash = adminRow.password_hash;
+        console.log('====================================================');
+        console.log('[STATUS SISTEM AUTENTIKASI ADMIN]');
+        console.log(`  Database File : ${DB_PATH}`);
+        console.log('  Tabel Admin   : admin_users');
 
-          // 1. Pastikan username di database konsisten dengan ADMIN_USERNAME ('sppln')
-          if (adminRow.username !== ADMIN_USERNAME) {
-            console.log(`⚠️ Memperbaiki username admin dari "${adminRow.username}" menjadi "${ADMIN_USERNAME}"...`);
-            updatedUsername = ADMIN_USERNAME;
-            needsUpdate = true;
+        if (rows && rows.length > 0) {
+          const admin = rows[0];
+          const hashInfo = detectHashFormat(admin.password_hash);
+
+          console.log(`  Admin User ID : ${admin.id}`);
+          console.log(`  Username      : "${admin.username}"`);
+          console.log(`  Format Hash   : ${hashInfo.description}`);
+
+          if (hashInfo.type !== 'pbkdf2_salted' && hashInfo.type !== 'pbkdf2_raw128') {
+            console.warn(`  ⚠️ PERINGATAN: Format password_hash di SQLite bukan PBKDF2-SHA512 (${hashInfo.description}).`);
+            console.warn('     Server TIDAK mereset password secara otomatis demi menjaga keaslian data.');
+            console.warn('     Jika verifikasi gagal, pastikan password_hash di SQLite dikonversi ke format PBKDF2-SHA512.');
+          } else {
+            console.log('  Status        : Akun admin existing siap digunakan sebagai sumber kebenaran tunggal.');
           }
 
-          // 2. Deteksi apakah password_hash lama menggunakan format scrypt atau format legacy non-PBKDF2
-          const isPbkdf2 = (
-            (typeof adminRow.password_hash === 'string' && adminRow.password_hash.includes(':') && adminRow.password_hash.split(':')[1]?.length === 128) ||
-            /^[a-f0-9]{128}$/i.test(adminRow.password_hash)
-          );
-
-          if (!isPbkdf2) {
-            console.log('⚠️ Terdeteksi password_hash lama menggunakan format scrypt/legacy. Memigrasikan HANYA password_hash ke PBKDF2-SHA512...');
-            updatedHash = hashPassword(initialPassword);
-            needsUpdate = true;
-          }
-
-          targetPasswordHash = updatedHash;
-
-          if (needsUpdate) {
-            db.run(
-              'UPDATE admin_users SET username = ?, password_hash = ?, updated_at = ? WHERE id = ?',
-              [updatedUsername, updatedHash, now, adminRow.id],
-              (updateErr) => {
-                if (updateErr) {
-                  console.error('❌ Gagal memperbarui akun admin:', updateErr.message);
-                } else {
-                  console.log(`✅ Akun administrator (${ADMIN_USERNAME}) berhasil disinkronisasi ke PBKDF2.`);
-                }
-              }
-            );
-          }
-
-          // 3. Pastikan tidak ada akun kedua atau duplikat (tetap hanya satu admin tunggal)
           if (rows.length > 1) {
-            db.run('DELETE FROM admin_users WHERE id != ?', [adminRow.id], (delErr) => {
-              if (!delErr) {
-                console.log('✅ Akun duplikat/tambahan berhasil dibersihkan, mempertahankan 1 admin tunggal.');
-              }
-            });
+            console.warn(`  ⚠️ Catatan: Terdapat ${rows.length} akun pada tabel admin_users. Akun pertama ("${admin.username}") digunakan.`);
           }
+          // JANGAN lakukan UPDATE, JANGAN timpa password_hash, JANGAN ganti username!
+        } else {
+          console.warn(`  ⚠️ Tabel admin_users pada ${DB_PATH} belum memiliki akun administrator.`);
         }
+        console.log('====================================================');
       });
     });
   });
@@ -502,50 +534,77 @@ app.post('/api/auth/login', loginRateLimiter, (req, res) => {
 
   const trimmedUsername = username.trim();
 
-  // Bandingkan username dengan benar
-  if (trimmedUsername !== ADMIN_USERNAME) {
-    registerFailedLogin(clientIp);
-    auditLog('LOGIN_FAILED', { ip: clientIp, username: trimmedUsername.substring(0, 30) });
-    return res.status(401).json({
-      success: false,
-      message: 'Username atau password salah.',
-    });
-  }
-
-  // Verifikasi kredensial langsung terhadap akun admin di database SQLite
+  // Query akun admin LANGSUNG dari tabel admin_users di database SQLite (sebagai satu-satunya sumber kebenaran)
   db.get(
-    'SELECT id, username, password_hash FROM admin_users WHERE username = ? OR id = 1 ORDER BY id ASC LIMIT 1',
-    [ADMIN_USERNAME],
+    'SELECT id, username, password_hash FROM admin_users WHERE username = ? OR username = ? COLLATE NOCASE ORDER BY id ASC LIMIT 1',
+    [trimmedUsername, trimmedUsername],
     (err, adminRow) => {
-      const storedHash = adminRow?.password_hash || targetPasswordHash;
-      const isPasswordMatch = verifyPassword(password, storedHash);
+      if (err) {
+        console.error('❌ [AUTH-ERROR] Error query tabel admin_users di SQLite:', err.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan pada database server.',
+        });
+      }
 
-      if (!isPasswordMatch) {
+      // 1. Jika username tidak ditemukan di database SQLite
+      if (!adminRow) {
         registerFailedLogin(clientIp);
-        auditLog('LOGIN_FAILED', { ip: clientIp, username: trimmedUsername.substring(0, 30) });
+        auditLog('LOGIN_FAILED', { ip: clientIp, username: trimmedUsername.substring(0, 30), reason: 'Username not found in SQLite' });
         return res.status(401).json({
           success: false,
           message: 'Username atau password salah.',
         });
       }
 
-      // Reset catatan login gagal jika berhasil
+      const hashInfo = detectHashFormat(adminRow.password_hash);
+
+      // 2. Jika format hash di database SQLite bukan PBKDF2 yang kompatibel (misalnya format scrypt legacy / rusak)
+      if (hashInfo.type !== 'pbkdf2_salted' && hashInfo.type !== 'pbkdf2_raw128') {
+        registerFailedLogin(clientIp);
+        console.error('❌ [AUTH-DIAGNOSIS] Verifikasi login gagal karena format password_hash di SQLite tidak kompatibel:');
+        console.error(`   - Database yang digunakan : ${DB_PATH}`);
+        console.error('   - Tabel                   : admin_users');
+        console.error(`   - Username yang terdeteksi: "${adminRow.username}"`);
+        console.error(`   - Format hash terdeteksi  : ${hashInfo.description}`);
+        console.error('   - Alasan verifikasi gagal : Format hash tersimpan bukan PBKDF2-SHA512. Server menolak tanpa mereset password secara otomatis.');
+        console.error('   - File yang perlu ditinjau: backend/server.js');
+
+        return res.status(401).json({
+          success: false,
+          message: 'Username atau password salah.',
+        });
+      }
+
+      // 3. Verifikasi password yang dimasukkan terhadap password_hash di database SQLite menggunakan PBKDF2-SHA512
+      const isPasswordMatch = verifyPassword(password, adminRow.password_hash);
+
+      if (!isPasswordMatch) {
+        registerFailedLogin(clientIp);
+        auditLog('LOGIN_FAILED', { ip: clientIp, username: trimmedUsername.substring(0, 30), reason: 'Password mismatch' });
+        return res.status(401).json({
+          success: false,
+          message: 'Username atau password salah.',
+        });
+      }
+
+      // Login administrator berhasil
       resetFailedLogin(clientIp);
 
-      // Buat token sesi aman (32 byte random hex)
       const token = crypto.randomBytes(32).toString('hex');
       activeSessions.set(token, {
-        username: ADMIN_USERNAME,
+        userId: adminRow.id,
+        username: adminRow.username,
         expiresAt: Date.now() + SESSION_DURATION_MS,
       });
 
-      auditLog('LOGIN_SUCCESS', { ip: clientIp, user: ADMIN_USERNAME });
+      auditLog('LOGIN_SUCCESS', { ip: clientIp, user: adminRow.username });
 
       res.json({
         success: true,
         token,
         user: {
-          username: ADMIN_USERNAME,
+          username: adminRow.username,
         },
         message: 'Login administrator berhasil.',
       });
@@ -558,8 +617,11 @@ app.post('/api/auth/logout', (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim();
-    activeSessions.delete(token);
-    auditLog('LOGOUT', { user: ADMIN_USERNAME });
+    const session = activeSessions.get(token);
+    if (session) {
+      auditLog('LOGOUT', { user: session.username });
+      activeSessions.delete(token);
+    }
   }
 
   res.json({
@@ -581,6 +643,8 @@ app.get('/api/auth/me', requireAdminAuth, (req, res) => {
 // PUT /api/auth/password - Ganti password administrator tunggal (Wajib Admin Auth)
 app.put('/api/auth/password', requireAdminAuth, (req, res) => {
   const { currentPassword, newPassword } = req.body;
+  const username = req.adminUser.username;
+  const userId = req.adminUser.userId;
 
   if (!currentPassword || !newPassword || typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
     return res.status(400).json({
@@ -589,23 +653,30 @@ app.put('/api/auth/password', requireAdminAuth, (req, res) => {
     });
   }
 
-  // 1. Verifikasi Password Saat Ini dari database SQLite
+  // 1. Ambil data akun admin langsung dari database SQLite
   db.get(
-    'SELECT id, password_hash FROM admin_users WHERE username = ? OR id = 1 ORDER BY id ASC LIMIT 1',
-    [ADMIN_USERNAME],
-    (err, row) => {
-      const existingHash = row?.password_hash || targetPasswordHash;
-      const isCurrentMatch = verifyPassword(currentPassword, existingHash);
+    'SELECT id, username, password_hash FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+    [userId, username],
+    (err, adminRow) => {
+      if (err || !adminRow) {
+        return res.status(500).json({
+          success: false,
+          message: 'Gagal memverifikasi akun administrator di SQLite.',
+        });
+      }
+
+      // Verifikasi password saat ini terhadap hash di SQLite
+      const isCurrentMatch = verifyPassword(currentPassword, adminRow.password_hash);
 
       if (!isCurrentMatch) {
-        auditLog('CHANGE_PASSWORD_FAILED', { reason: 'Wrong current password' });
+        auditLog('CHANGE_PASSWORD_FAILED', { user: username, reason: 'Wrong current password' });
         return res.status(400).json({
           success: false,
           message: 'Password saat ini salah.',
         });
       }
 
-      // 2. Validasi Kekuatan Password Baru (minimal 10 karakter, huruf besar, kecil, angka, dan karakter khusus)
+      // 2. Validasi Kekuatan Password Baru
       if (!validatePasswordStrength(newPassword)) {
         return res.status(400).json({
           success: false,
@@ -615,28 +686,31 @@ app.put('/api/auth/password', requireAdminAuth, (req, res) => {
 
       // 3. Hash Password Baru menggunakan PBKDF2/SHA-512 dengan salt unik acak
       const newPasswordHash = hashPassword(newPassword);
-      targetPasswordHash = newPasswordHash;
 
-      // 4. Update SQLite database dengan prepared statement
+      // 4. Update SQLite database HANYA pada record admin tersebut
       const now = new Date().toISOString();
       db.run(
-        'UPDATE admin_users SET password_hash = ?, updated_at = ? WHERE id = 1 OR username = ?',
-        [newPasswordHash, now, ADMIN_USERNAME],
+        'UPDATE admin_users SET password_hash = ?, updated_at = ? WHERE id = ?',
+        [newPasswordHash, now, adminRow.id],
         (updateErr) => {
           if (updateErr) {
-            console.error('Database update error on password:', updateErr.message);
+            console.error('❌ Database update error on password:', updateErr.message);
+            return res.status(500).json({
+              success: false,
+              message: 'Gagal menyimpan password baru ke database SQLite.',
+            });
           }
+
+          // 5. Invalidate SELURUH sesi aktif lama (keamanan maksimal)
+          activeSessions.clear();
+          auditLog('PASSWORD_CHANGED', { user: username });
+
+          res.json({
+            success: true,
+            message: 'Password berhasil diubah. Seluruh sesi lama telah dicabut.',
+          });
         }
       );
-
-      // 5. Invalidate SELURUH sesi aktif lama
-      activeSessions.clear();
-      auditLog('PASSWORD_CHANGED', { user: ADMIN_USERNAME });
-
-      res.json({
-        success: true,
-        message: 'Password berhasil diubah. Seluruh sesi lama telah dicabut.',
-      });
     }
   );
 });
@@ -1214,7 +1288,7 @@ app.put('/api/settings', requireAdminAuth, (req, res) => {
         console.error('Database commit error on /api/settings:', err.message);
         return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server saat memperbarui pengaturan.' });
       }
-      auditLog('SETTINGS_UPDATED', { user: ADMIN_USERNAME });
+      auditLog('SETTINGS_UPDATED', { user: req.adminUser?.username || 'admin' });
       res.json({ success: true, message: 'Pengaturan berhasil diperbarui.' });
     });
   });
@@ -1298,7 +1372,7 @@ app.put('/api/settings/api', requireAdminAuth, (req, res) => {
             message: 'Terjadi kesalahan pada server saat menyimpan URL API.'
           });
         }
-        auditLog('API_URL_UPDATED', { user: ADMIN_USERNAME });
+        auditLog('API_URL_UPDATED', { user: req.adminUser?.username || 'admin' });
         res.json({
           success: true,
           data: { apiUrl: cleanUrl },
