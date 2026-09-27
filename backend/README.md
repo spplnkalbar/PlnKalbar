@@ -30,8 +30,8 @@ PORT=3000
 DB_PATH=./database.sqlite
 
 # Kredensial Administrator Tunggal
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=spplnkalbar2026
+ADMIN_USERNAME=sppln
+ADMIN_PASSWORD=ContohPasswordKuat2026!
 ADMIN_PASSWORD_SALT=sp_pln_uid_kalbar_salt_2026
 SESSION_SECRET=sp_pln_uid_kalbar_session_secret_key_2026
 ```
@@ -46,6 +46,7 @@ SESSION_SECRET=sp_pln_uid_kalbar_session_secret_key_2026
 | `POST` | `/api/auth/login` | Login admin (mengirim `{ username, password }`) | `-` |
 | `POST` | `/api/auth/logout` | Logout dan membatalkan token sesi | `Authorization: Bearer <token>` |
 | `GET` | `/api/auth/me` | Memeriksa validitas sesi aktif | `Authorization: Bearer <token>` |
+| `PUT` | `/api/auth/password` | Mengganti password admin (mencabut sesi lama) | `Authorization: Bearer <token>` |
 
 #### Contoh Respon Login Berhasil:
 ```json
@@ -53,9 +54,9 @@ SESSION_SECRET=sp_pln_uid_kalbar_session_secret_key_2026
   "success": true,
   "token": "4f8a9b2c...",
   "user": {
-    "username": "admin"
+    "username": "sppln"
   },
-  "message": "Login administrator berhasil"
+  "message": "Login administrator berhasil."
 }
 ```
 
