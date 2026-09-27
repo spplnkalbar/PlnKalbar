@@ -6,13 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
-!backend/.env.example
-backend/.env
 *.sqlite
 *.sqlite3
 *.db
-!backend/berita.db
-!berita.db
 
 # Caches and temp files
 .cache/

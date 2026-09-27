@@ -14,6 +14,30 @@ Aplikasi portal berita premium dan informasi terkini Serikat Pekerja PLN Kaliman
 
 ---
 
+## 🏗️ Arsitektur Sistem
+
+Aplikasi ini adalah **frontend client murni (React + Vite + TypeScript)** yang berkomunikasi secara terpusat dengan backend Termux melalui REST API:
+
+```text
+Website React (Frontend)
+    ↓ (HTTP / HTTPS)
+REST API Client (src/services/api.ts)
+    ↓
+Cloudflare Tunnel (Public Gateway)
+    ↓
+Node.js API di Termux Android
+    ↓
+sql.js (Database Driver)
+    ↓
+/berita-sppln/berita.db (Single Source of Truth)
+```
+
+- **Frontend Murni**: Tidak ada database lokal, tidak ada credentials admin, dan tidak ada password/hash di sisi klien.
+- **REST API Terpusat**: Seluruh interaksi data artikel, galeri foto, profil organisasi, upload gambar, dan autentikasi administrator dikelola oleh API di Termux.
+- **Konfigurasi URL Dinamis**: URL Cloudflare Tunnel dapat dikonfigurasi melalui `.env` (`VITE_API_BASE_URL`) atau secara langsung melalui panel admin pada antarmuka web.
+
+---
+
 ## 🚀 Teknologi Utama
 
 - **Vite & React 19**: Landasan kompilasi secepat kilat untuk menyajikan Single Page Application (SPA).
